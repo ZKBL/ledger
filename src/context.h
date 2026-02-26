@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,9 @@
  *
  * @ingroup data
  */
-#ifndef INCLUDED_CONTEXT_H
-#define INCLUDED_CONTEXT_H
+#pragma once
+
+#include <utility>
 
 #include "utils.h"
 #include "times.h"
@@ -55,116 +56,99 @@ class journal_t;
 class account_t;
 class scope_t;
 
-class parse_context_t
-{
+class parse_context_t {
 public:
-  static const std::size_t MAX_LINE = 4096;
+  inline static constexpr std::size_t MAX_LINE = 4096;
 
-  shared_ptr<std::istream> stream;
+  std::shared_ptr<std::istream> stream;
 
-  path                   pathname;
-  path                   current_directory;
-  journal_t *            journal;
-  account_t *            master;
-  scope_t *              scope;
-  char                   linebuf[MAX_LINE + 1];
+  path pathname;
+  path current_directory;
+  journal_t* journal;
+  account_t* master;
+  scope_t* scope;
+  char linebuf[MAX_LINE + 1];
   std::istream::pos_type line_beg_pos;
   std::istream::pos_type curr_pos;
-  std::size_t            linenum;
-  std::size_t            errors;
-  std::size_t            count;
-  std::size_t            sequence;
-  std::string            last;
+  std::size_t linenum;
+  std::size_t errors;
+  std::size_t count;
+  std::size_t sequence;
+  std::string last;
 
   explicit parse_context_t(const path& cwd)
-    : current_directory(cwd), master(NULL), scope(NULL),
-      linenum(0), errors(0), count(0), sequence(1) {}
+      : current_directory(cwd), master(nullptr), scope(nullptr), linenum(0), errors(0), count(0),
+        sequence(1) {}
 
-  explicit parse_context_t(shared_ptr<std::istream> _stream,
-                           const path& cwd)
-    : stream(_stream), current_directory(cwd), master(NULL),
-      scope(NULL), linenum(0), errors(0), count(0), sequence(1) {}
+  explicit parse_context_t(std::shared_ptr<std::istream> _stream, const path& cwd)
+      : stream(std::move(_stream)), current_directory(cwd), master(nullptr), scope(nullptr),
+        linenum(0), errors(0), count(0), sequence(1) {}
 
   parse_context_t(const parse_context_t& context)
-   : stream(context.stream),
-     pathname(context.pathname),
-     current_directory(context.current_directory),
-     journal(context.journal),
-     master(context.master),
-     scope(context.scope),
-     line_beg_pos(context.line_beg_pos),
-     curr_pos(context.curr_pos),
-     linenum(context.linenum),
-     errors(context.errors),
-     count(context.count),
-     sequence(context.sequence) {
+      : stream(context.stream), pathname(context.pathname),
+        current_directory(context.current_directory), journal(context.journal),
+        master(context.master), scope(context.scope), line_beg_pos(context.line_beg_pos),
+        curr_pos(context.curr_pos), linenum(context.linenum), errors(context.errors),
+        count(context.count), sequence(context.sequence) {
     std::memcpy(linebuf, context.linebuf, MAX_LINE);
   }
 
-  string location() const {
-    return file_context(pathname, linenum);
-  }
+  string location() const { return file_context(pathname, linenum); }
 
-  void warning(const string& what) const {
-    warning_func(location() + " " + what);
-  }
+  void warning(const string& what) const { warning_func(location() + " " + what); }
   void warning(const boost::format& what) const {
     warning_func(location() + " " + string(what.str()));
   }
 };
 
-inline parse_context_t open_for_reading(const path& pathname,
-                                        const path& cwd)
-{
+inline parse_context_t open_for_reading(const path& pathname, const path& cwd) {
   path filename = resolve_path(pathname);
-  filename = filesystem::absolute(filename, cwd);
-  if (! exists(filename) || is_directory(filename))
-    throw_(std::runtime_error,
-           _f("Cannot read journal file %1%") % filename);
+  filename = filename.is_absolute() ? filename : std::filesystem::absolute(cwd / filename);
+  if (!exists(filename) || is_directory(filename))
+    throw_(std::runtime_error, _f("Cannot read journal file %1%") % filename);
 
   path parent(filename.parent_path());
 #if HAVE_GPGME
-  shared_ptr<std::istream> stream(decrypted_stream_t::open_stream(filename));
+  std::shared_ptr<std::istream> stream(decrypted_stream_t::open_stream(filename));
 #else
-  shared_ptr<std::istream> stream(new ifstream(filename));
+  std::shared_ptr<std::istream> stream(new ifstream(filename, std::ios::binary));
 #endif
   parse_context_t context(stream, parent);
   context.pathname = filename;
   return context;
 }
 
-class parse_context_stack_t
-{
+inline path safe_current_path() {
+  std::error_code ec;
+  path cwd = std::filesystem::current_path(ec);
+  if (ec)
+    return path("/");
+  return cwd;
+}
+
+class parse_context_stack_t {
   std::list<parse_context_t> parsing_context;
 
 public:
-  void push() {
-    parsing_context.push_front(parse_context_t(filesystem::current_path()));
+  void push() { parsing_context.push_front(parse_context_t(safe_current_path())); }
+  void push(std::shared_ptr<std::istream> stream, const path& cwd = safe_current_path()) {
+    parsing_context.push_front(parse_context_t(std::move(stream), cwd));
   }
-  void push(shared_ptr<std::istream> stream,
-            const path& cwd = filesystem::current_path()) {
-    parsing_context.push_front(parse_context_t(stream, cwd));
-  }
-  void push(const path& pathname,
-            const path& cwd = filesystem::current_path()) {
+  void push(const path& pathname, const path& cwd = safe_current_path()) {
     parsing_context.push_front(open_for_reading(pathname, cwd));
   }
 
-  void push(const parse_context_t& context) {
-    parsing_context.push_front(context);
-  }
+  void push(const parse_context_t& context) { parsing_context.push_front(context); }
 
   void pop() {
-    assert(! parsing_context.empty());
+    assert(!parsing_context.empty());
     parsing_context.pop_front();
   }
 
   parse_context_t& get_current() {
-    assert(! parsing_context.empty());
+    assert(!parsing_context.empty());
     return parsing_context.front();
   }
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_CONTEXT_H

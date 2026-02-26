@@ -1,5 +1,7 @@
+#include <utility>
+
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,67 +41,49 @@
  *
  * @ingroup util
  */
-#ifndef INCLUDED_ERROR_H
-#define INCLUDED_ERROR_H
+#pragma once
 
 namespace ledger {
 
-extern std::ostringstream _desc_buffer;
+extern thread_local std::ostringstream _desc_buffer;
 
 template <typename T>
-[[ noreturn ]] inline void throw_func(const string& message) {
+[[noreturn]] inline void throw_func(const string& message) {
   _desc_buffer.clear();
   _desc_buffer.str("");
   throw T(message);
 }
 
-#define throw_(cls, msg)                        \
-  ((_desc_buffer << (msg)),                     \
-   throw_func<cls>(_desc_buffer.str()))
+#define throw_(cls, msg) ((_desc_buffer << (msg)), throw_func<cls>(_desc_buffer.str()))
 
 inline void warning_func(const string& message) {
-  std::cerr << "Warning: " << message << std::endl;
+  std::cerr << "Warning: " << message << '\n';
   _desc_buffer.clear();
   _desc_buffer.str("");
 }
 
-#define warning_(msg)                           \
-  ((_desc_buffer << (msg)),                     \
-   warning_func(_desc_buffer.str()))
+#define warning_(msg) ((_desc_buffer << (msg)), warning_func(_desc_buffer.str()))
 
-extern std::ostringstream _ctxt_buffer;
+extern thread_local std::ostringstream _ctxt_buffer;
 
-#define add_error_context(msg)                  \
-  ((long(_ctxt_buffer.tellp()) == 0) ?          \
-   (_ctxt_buffer << (msg)) :                    \
-   (_ctxt_buffer << std::endl << (msg)))
+#define add_error_context(msg)                                                                     \
+  ((long(_ctxt_buffer.tellp()) == 0) ? (_ctxt_buffer << (msg)) : (_ctxt_buffer << '\n' << (msg)))
 
 string error_context();
 
 string file_context(const path& file, std::size_t line);
-string line_context(const string&           line,
-                    const string::size_type pos     = 0,
+string line_context(const string& line, const string::size_type pos = 0,
                     const string::size_type end_pos = 0);
 
-string source_context(const path&                  file,
-                      const std::istream::pos_type pos,
-                      const std::istream::pos_type end_pos,
-                      const string&                prefix = "");
-
-#define DECLARE_EXCEPTION(name, kind)                           \
-  class name : public kind {                                    \
-  public:                                                       \
-  explicit name(const string& why) throw() : kind(why) {}       \
-  virtual ~name() throw() {}                                    \
-  }
+string source_context(const path& file, const std::istream::pos_type pos,
+                      const std::istream::pos_type end_pos, const string& prefix = "");
 
 struct error_count {
   std::size_t count;
   std::string message;
-  explicit error_count(std::size_t _count, std::string _msg) : count(_count), message(_msg) {}
-  const char * what() const { return message.c_str(); }
+  explicit error_count(std::size_t _count, std::string _msg)
+      : count(_count), message(std::move(_msg)) {}
+  const char* what() const { return message.c_str(); }
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_ERROR_H

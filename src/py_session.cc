@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -33,46 +33,85 @@
 
 #include "pyinterp.h"
 #include "pyutils.h"
+#include "error.h"
 #include "session.h"
+#include "pool.h"
 
 namespace ledger {
 
+using namespace python;
 using namespace boost::python;
 
 namespace {
-  journal_t * py_read_journal(const string& pathname)
-  {
-    return python_session->read_journal(path(pathname));
-  }
-
-  journal_t * py_read_journal_from_string(const string& data)
-  {
-    return python_session->read_journal_from_string(data);
-  }
+boost::shared_ptr<journal_t> py_read_journal(const string& pathname) {
+  python_session->read_journal(path(pathname));
+  return python_session->journal;
 }
 
-void export_session()
-{
-  class_< session_t, boost::noncopyable > ("Session")
-    .def("read_journal", &session_t::read_journal,
-         return_internal_reference<>())
-    .def("read_journal_from_string", &session_t::read_journal_from_string,
-         return_internal_reference<>())
-    .def("read_journal_files", &session_t::read_journal_files,
-         return_internal_reference<>())
-    .def("close_journal_files", &session_t::close_journal_files)
-    .def("journal", &session_t::get_journal,
-         return_internal_reference<>())
-    ;
+boost::shared_ptr<journal_t> py_read_journal_from_string(const string& data) {
+  python_session->read_journal_from_string(data);
+  return python_session->journal;
+}
 
-  scope().attr("session") =
-    object(ptr(static_cast<session_t *>(python_session.get())));
-  scope().attr("read_journal") =
-    python::make_function(&py_read_journal,
-                          return_internal_reference<>());
+PyObject* py_error_context([[maybe_unused]] const session_t& session) {
+  return str_to_py_unicode(error_context());
+}
+// After close_journal_files() replaces the commodity pool, rebind the
+// module-level `ledger.commodities` attribute to the new pool.  Without
+// this, any commodity_t* obtained from the old pool carries a graph_index
+// into the old pool's Boost.Graph price-history; using it as `target` in
+// find_price() on the new pool causes an out-of-bounds vertex() call and
+// the this=0x0 segfault described in issue #976.
+void py_update_commodities() {
+  object main_module = import("ledger");
+  main_module.attr("commodities") = commodity_pool_t::current_pool;
+}
+
+void py_close_journal_files() {
+  python_session->close_journal_files();
+  py_update_commodities();
+}
+
+void py_session_close_journal_files(session_t& session) {
+  session.close_journal_files();
+  py_update_commodities();
+}
+
+boost::shared_ptr<journal_t> py_session_read_journal(session_t& session, const path& pathname) {
+  session.read_journal(pathname);
+  return session.journal;
+}
+
+boost::shared_ptr<journal_t> py_session_read_journal_from_string(session_t& session,
+                                                                 const string& data) {
+  session.read_journal_from_string(data);
+  return session.journal;
+}
+
+boost::shared_ptr<journal_t> py_session_read_journal_files(session_t& session) {
+  session.read_journal_files();
+  return session.journal;
+}
+
+boost::shared_ptr<journal_t> py_session_get_journal(session_t& session) {
+  return session.journal;
+}
+} // namespace
+
+void export_session() {
+  class_<session_t, boost::noncopyable>("Session")
+      .def("read_journal", py_session_read_journal)
+      .def("read_journal_from_string", py_session_read_journal_from_string)
+      .def("read_journal_files", py_session_read_journal_files)
+      .def("close_journal_files", &py_session_close_journal_files)
+      .def("journal", py_session_get_journal)
+      .def("error_context", &py_error_context);
+
+  scope().attr("session") = object(ptr(static_cast<session_t*>(python_session.get())));
+  scope().attr("close_journal_files") = boost::python::make_function(&py_close_journal_files);
+  scope().attr("read_journal") = boost::python::make_function(&py_read_journal);
   scope().attr("read_journal_from_string") =
-    python::make_function(&py_read_journal_from_string,
-                          return_internal_reference<>());
+      boost::python::make_function(&py_read_journal_from_string);
 }
 
 } // namespace ledger

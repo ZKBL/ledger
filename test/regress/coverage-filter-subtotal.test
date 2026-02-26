@@ -1,0 +1,19 @@
+; Test subtotal_posts filter (exercises filters.h subtotal_posts and its clear())
+; Covers: subtotal_posts::operator(), report_subtotal(), flush(), clear()
+
+2024/01/15 Purchase A
+    Expenses:Food         $10.00
+    Assets:Checking
+
+2024/02/15 Purchase B
+    Expenses:Food         $20.00
+    Assets:Checking
+
+2024/03/15 Purchase C
+    Expenses:Food         $30.00
+    Assets:Checking
+
+test --subtotal reg -> 0
+24-Jan-15 - 24-Mar-15           Assets:Checking             $-60.00      $-60.00
+                                Expenses:Food                $60.00            0
+end test

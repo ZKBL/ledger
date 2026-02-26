@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,12 +39,8 @@
  *
  * @ingroup report
  *
- * @brief Brief
- *
- * Long.
  */
-#ifndef INCLUDED_PTREE_H
-#define INCLUDED_PTREE_H
+#pragma once
 
 #include "chain.h"
 
@@ -61,35 +57,30 @@ class report_t;
  *
  * Long.
  */
-class format_ptree : public item_handler<post_t>
-{
+class format_ptree : public item_handler<post_t> {
 protected:
   report_t& report;
 
-  typedef std::map<string, commodity_t *>  commodities_map;
-  typedef std::pair<string, commodity_t *> commodities_pair;
+  using commodities_map = std::map<string, commodity_t*>;
+  using commodities_pair = std::pair<string, commodity_t*>;
 
-  commodities_map      commodities;
-  std::set<xact_t *>   transactions_set;
-  std::deque<xact_t *> transactions;
+  commodities_map commodities;
+  std::set<xact_t*> transactions_set;
+  std::deque<xact_t*> transactions;
 
 public:
-  enum format_t {
-    FORMAT_XML
-  } format;
+  enum format_t : uint8_t { FORMAT_XML } format;
 
   format_ptree(report_t& _report, format_t _format = FORMAT_XML)
-    : report(_report), format(_format) {
+      : report(_report), format(_format) {
     TRACE_CTOR(format_ptree, "report&, format_t");
   }
-  virtual ~format_ptree() {
-    TRACE_DTOR(format_ptree);
-  }
+  ~format_ptree() override { TRACE_DTOR(format_ptree); }
 
-  virtual void flush();
-  virtual void operator()(post_t& post);
+  void flush() override;
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
+  void clear() override {
     commodities.clear();
     transactions_set.clear();
     transactions.clear();
@@ -99,5 +90,3 @@ public:
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_PTREE_H

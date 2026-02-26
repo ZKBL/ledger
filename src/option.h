@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -38,55 +38,221 @@
  * @author John Wiegley
  *
  * @ingroup expr
+ *
+ * @brief Basic type and macros for handling command-line options
  */
-#ifndef INCLUDED_OPTION_H
-#define INCLUDED_OPTION_H
+#pragma once
+
+/**
+ * @defgroup options Option Macro System
+ * @ingroup expr
+ *
+ * @brief Macro-based system for declaring, parsing, and dispatching
+ *        command-line options.
+ *
+ * @section opt_overview System Overview
+ *
+ * Ledger's command-line options are declared as data members of scope classes
+ * (primarily report_t) using a family of preprocessor macros.  Each option
+ * expands into a small struct that inherits from option_t<T>, with an instance
+ * named `<name>handler` embedded as a member of the parent class.  This
+ * approach gives each option its own handler_thunk() override for custom
+ * side-effect logic, while keeping declarations concise.
+ *
+ * @section opt_core Core Template: option_t\<T\>
+ *
+ * @code
+ *   template <typename T>
+ *   class option_t {
+ *     const char* name;          // internal name (underscores, trailing _ = wants arg)
+ *     string::size_type name_len;
+ *     const char ch;             // single-character shortcut ('\0' if none)
+ *     bool handled;              // true once on() has been called
+ *     optional<string> source;   // where the option was set from
+ *   public:
+ *     T* parent;                 // owning scope, set by OPT macros during lookup
+ *     string value;              // the option's string argument value
+ *     bool wants_arg;            // true if name ends with '_'
+ *
+ *     void on(whence);           // activate boolean option
+ *     void on(whence, str);      // activate with argument value
+ *     void off();                // deactivate option
+ *     operator bool();           // returns handled
+ *     string str();              // returns value (asserts handled)
+ *     string desc();             // returns --long-form description
+ *
+ *     // Override these for custom behavior:
+ *     virtual void handler_thunk(const optional<string>& whence);
+ *     virtual void handler_thunk(const optional<string>& whence, const string& str);
+ *   };
+ * @endcode
+ *
+ * Key behavior:
+ * - `on(whence)` calls handler_thunk(whence), then sets handled=true.
+ * - `on(whence, str)` calls handler_thunk(whence, str); if the thunk did not
+ *   modify value, sets value=str.  Then sets handled=true.
+ * - `wants_arg` is auto-detected from a trailing underscore in the name.
+ * - `desc()` converts underscores to hyphens for display (e.g., "sort_all_"
+ *   becomes "--sort-all").
+ *
+ * @section opt_macros Macro Inventory by Family
+ *
+ * @subsection opt_structure Structure Macros (building blocks)
+ *
+ * | Macro | Expansion | Purpose |
+ * |-------|-----------|---------|
+ * | `BEGIN(type, name)` | `struct name##option_t : public option_t<type>` | Opens the option struct
+ * declaration | | `CTOR(type, name)` | `name##option_t() : option_t<type>(#name)` | Basic
+ * constructor | | `CTOR_(type, name, base)` | `name##option_t() : option_t<type>(#name), base` |
+ * Constructor with extra member initializer | | `DECL1(type, name, vartype, var, value)` | declares
+ * `vartype var;` + constructor | Adds an extra member variable to the option struct | | `END(name)`
+ * | `name##handler` | Closes the struct and declares the member instance |
+ *
+ * @subsection opt_handler Handler Override Macros
+ *
+ * | Macro | Expansion | Purpose |
+ * |-------|-----------|---------|
+ * | `DO()` | `void handler_thunk(whence) override` | Override for boolean (no-arg) options |
+ * | `DO_(var)` | `void handler_thunk(whence, var) override` | Override for options taking an
+ * argument |
+ *
+ * @subsection opt_convenience Convenience Declaration Macros
+ *
+ * These combine BEGIN/CTOR/END into single-line declarations:
+ *
+ * | Macro | Usage Pattern | Purpose |
+ * |-------|---------------|---------|
+ * | `OPTION(type, name)` | `OPTION(report_t, color);` | Simple option, no custom handler logic |
+ * | `OPTION_(type, name, body)` | `OPTION_(report_t, actual, DO() { ... });` | Option with custom
+ * DO()/DO_() handler | | `OPTION_CTOR(type, name, body)` | `OPTION_CTOR(report_t, amount_,
+ * DECL1(...) { } DO_(...) { ... });` | Fully custom body with extra members, custom CTOR, and
+ * handler |
+ *
+ * @subsection opt_lookup Lookup Macros (used in lookup_option)
+ *
+ * These macros are used in the lookup_option() method to match a command-line
+ * string to the corresponding option handler:
+ *
+ * | Macro | Purpose |
+ * |-------|---------|
+ * | `OPT(name)` | Exact name match; sets parent pointer and returns handler |
+ * | `OPT_(name)` | Match by full name or single-character shortcut |
+ * | `OPT_ALT(name, alt)` | Match by primary name or an alternative name |
+ * | `OPT_CH(name)` | Single-character-only match (no long form) |
+ *
+ * @subsection opt_access Access and Cross-Reference Macros
+ *
+ * | Macro | Expansion | Purpose |
+ * |-------|-----------|---------|
+ * | `HANDLER(name)` | `name##handler` | Access the option's member instance |
+ * | `HANDLED(name)` | `name##handler` | Same; tests if option is set (via bool conversion) |
+ * | `OTHER(name)` | `parent->HANDLER(name)` | Access another option on the same parent; used in
+ * DO()/DO_() bodies for cross-option side effects | | `COPY_OPT(name, other)` | copy constructor
+ * helper | Copies one option's handler from another instance |
+ *
+ * @subsection opt_factory Factory Macros
+ *
+ * | Macro | Purpose |
+ * |-------|---------|
+ * | `MAKE_OPT_HANDLER(type, x)` | Wraps the option's handler() method as an expr_t functor |
+ * | `MAKE_OPT_FUNCTOR(type, x)` | Wraps the option's operator() as an expr_t functor |
+ *
+ * @section opt_naming Naming Conventions
+ *
+ * - **Trailing underscore** = option takes a string argument.
+ *   Example: `limit_` declares `--limit VALUE`.
+ * - **No trailing underscore** = boolean flag.
+ *   Example: `collapse` declares `--collapse` (on/off).
+ * - **Underscores in name** map to **hyphens on CLI**.
+ *   Example: `sort_all_` becomes `--sort-all VALUE`.
+ *   The `is_eq()` helper function handles this mapping during lookup.
+ * - **Member name**: The option instance is always `name##handler`.
+ *   Example: `OPTION(report_t, color)` creates member `colorhandler`.
+ *
+ * @section opt_example Step-by-Step: Adding a New Command-Line Option
+ *
+ * Suppose you want to add `--my-filter VALUE` to report_t:
+ *
+ * **Step 1.** Declare the option in report.h using an OPTION macro.
+ * Since it takes an argument, use a trailing underscore in the name:
+ * @code
+ *   // In report_t's member declarations:
+ *   OPTION_(report_t, my_filter_,
+ *     DO_(str) {
+ *       // Custom handler: also activate --limit with a predicate
+ *       OTHER(limit_).on(whence, string("account=~/") + str + "/");
+ *     });
+ * @endcode
+ * This expands to a struct `my_filter_option_t` with an instance
+ * `my_filter_handler` as a member of report_t.
+ *
+ * **Step 2.** Register the option in report_t::lookup_option() (report.cc):
+ * @code
+ *   OPT(my_filter_);
+ * @endcode
+ * Or, to also support `-m` as a shortcut, use:
+ * @code
+ *   OPT_(my_filter_);
+ *   // and set ch='m' via a custom CTOR if desired.
+ * @endcode
+ *
+ * **Step 3.** (Optional) If you need a filter handler in the pipeline,
+ * add it to chain_pre_post_handlers() or chain_post_handlers() in chain.cc:
+ * @code
+ *   if (report.HANDLED(my_filter_))
+ *     handler.reset(new my_filter_handler_t(handler, report.HANDLER(my_filter_).str()));
+ * @endcode
+ *
+ * **Step 4.** Add the option to report_options() for --options output:
+ * @code
+ *   HANDLER(my_filter_).report(out);
+ * @endcode
+ *
+ * **Step 5.** For a simple boolean flag instead, omit the trailing underscore:
+ * @code
+ *   OPTION(report_t, my_flag);  // creates --my-flag with no argument
+ * @endcode
+ * Test it with `report.HANDLED(my_flag)` which returns true if the user
+ * passed `--my-flag`.
+ */
 
 #include "scope.h"
 
 namespace ledger {
 
+using namespace boost::placeholders;
+
 class call_scope_t;
 
 template <typename T>
-class option_t
-{
+class option_t {
 protected:
-  const char *      name;
+  const char* name;
   string::size_type name_len;
-  const char        ch;
-  bool              handled;
-  optional<string>  source;
+  const char ch;
+  bool handled;
+  optional<string> source;
 
   option_t& operator=(const option_t&);
 
 public:
-  T *    parent;
+  T* parent;
   string value;
-  bool   wants_arg;
+  bool wants_arg;
 
-  option_t(const char * _name, const char _ch = '\0')
-    : name(_name), name_len(std::strlen(name)), ch(_ch),
-      handled(false), parent(NULL), value(),
-      wants_arg(name_len > 0 ? name[name_len - 1] == '_' : false) {
+  option_t(const char* _name, const char _ch = '\0')
+      : name(_name), name_len(std::strlen(name)), ch(_ch), handled(false), parent(nullptr), value(),
+        wants_arg(name_len > 0 ? name[name_len - 1] == '_' : false) {
     DEBUG("option.names", "Option: " << name);
     TRACE_CTOR(option_t, "const char *, const char");
   }
   option_t(const option_t& other)
-    : name(other.name),
-      name_len(other.name_len),
-      ch(other.ch),
-      handled(other.handled),
-      parent(NULL),
-      value(other.value),
-      wants_arg(other.wants_arg)
-  {
+      : name(other.name), name_len(other.name_len), ch(other.ch), handled(other.handled),
+        source(other.source), parent(nullptr), value(other.value), wants_arg(other.wants_arg) {
     TRACE_CTOR(option_t, "copy");
   }
 
-  virtual ~option_t() {
-    TRACE_DTOR(option_t);
-  }
+  virtual ~option_t() { TRACE_DTOR(option_t); }
 
   void report(std::ostream& out) const {
     if (handled && source) {
@@ -100,14 +266,14 @@ public:
         out.width(45);
         out << ' ';
       }
-      out << std::left << *source << std::endl;
+      out << std::left << *source << '\n';
     }
   }
 
   string desc() const {
     std::ostringstream out;
     out << "--";
-    for (const char * p = name; *p; p++) {
+    for (const char* p = name; *p; p++) {
       if (*p == '_') {
         if (*(p + 1))
           out << '-';
@@ -120,9 +286,7 @@ public:
     return out.str();
   }
 
-  operator bool() const {
-    return handled;
-  }
+  operator bool() const { return handled; }
 
   string str() const {
     assert(handled);
@@ -131,21 +295,17 @@ public:
     return value;
   }
 
-  void on(const char * whence) {
-    on(string(whence));
-  }
+  void on(const char* whence) { on(string(whence)); }
   void on(const optional<string>& whence) {
     handler_thunk(whence);
 
     handled = true;
-    source  = whence;
+    source = whence;
   }
 
-  void on(const char * whence, const string& str) {
-    on(string(whence), str);
-  }
+  void on(const char* whence, const string& str) { on(string(whence), str); }
   void on(const optional<string>& whence, const string& str) {
-    string before = value;
+    string before = value; // NOLINT(bugprone-unused-local-non-trivial-variable)
 
     handler_thunk(whence, str);
 
@@ -153,149 +313,127 @@ public:
       value = str;
 
     handled = true;
-    source  = whence;
+    source = whence;
   }
 
   void off() {
     handled = false;
-    value   = "";
-    source  = none;
+    value = "";
+    source = none;
   }
 
   virtual void handler_thunk(const optional<string>&) {}
   virtual void handler_thunk(const optional<string>&, const string&) {}
 
   value_t handler(call_scope_t& args) {
+    // NOLINTBEGIN(bugprone-branch-clone)
     if (wants_arg) {
       if (args.size() < 2)
         throw_(std::runtime_error, _f("No argument provided for %1%") % desc());
       else if (args.size() > 2)
-        throw_(std::runtime_error, _f("To many arguments provided for %1%") % desc());
-      else if (! args[0].is_string())
+        throw_(std::runtime_error, _f("Too many arguments provided for %1%") % desc());
+      else if (!args[0].is_string())
         throw_(std::runtime_error, _f("Context argument for %1% not a string") % desc());
       on(args.get<string>(0), args.get<string>(1));
-    }
-    else if (args.size() < 1) {
+    } else if (args.size() < 1) {
       throw_(std::runtime_error, _f("No argument provided for %1%") % desc());
-    }
-    else if (! args[0].is_string()) {
+    } else if (!args[0].is_string()) {
       throw_(std::runtime_error, _f("Context argument for %1% not a string") % desc());
-    }
-    else {
+    } else {
       on(args.get<string>(0));
     }
+    // NOLINTEND(bugprone-branch-clone)
     return true;
   }
 
   virtual value_t operator()(call_scope_t& args) {
-    if (! args.empty()) {
+    if (!args.empty()) {
       args.push_front(string_value("?expr"));
       return handler(args);
-    }
-    else if (wants_arg) {
+    } else if (wants_arg) {
       return string_value(value);
-    }
-    else {
+    } else {
       return handled;
     }
   }
 };
 
-#define BEGIN(type, name)                               \
-  struct name ## option_t : public option_t<type>
+#define BEGIN(type, name) struct name##option_t : public option_t<type>
 
-#define CTOR(type, name)                                \
-  name ## option_t() : option_t<type>(#name)
-#define CTOR_(type, name, base)                         \
-  name ## option_t() : option_t<type>(#name), base
-#define DECL1(type, name, vartype, var, value)          \
-  vartype var ;                                         \
-  name ## option_t() : option_t<type>(#name), var value
+#define CTOR(type, name) name##option_t() : option_t<type>(#name)
+#define CTOR_(type, name, base) name##option_t() : option_t<type>(#name), base
+#define DECL1(type, name, vartype, var, value)                                                     \
+  vartype var;                                                                                     \
+  name##option_t() : option_t<type>(#name), var value
 
-#define DO()      virtual void handler_thunk(const optional<string>& whence)
-#define DO_(var)  virtual void handler_thunk(const optional<string>& whence, \
-                                             const string& var)
+#define DO() virtual void handler_thunk([[maybe_unused]] const optional<string>& whence) override
+#define DO_()                                                                                      \
+  virtual void handler_thunk([[maybe_unused]] const optional<string>& whence,                      \
+                             [[maybe_unused]] const string& str) override
 
-#define END(name) name ## handler
+#define END(name) name##handler
 
-#define COPY_OPT(name, other) name ## handler(other.name ## handler)
+#define COPY_OPT(name, other) name##handler((other).name##handler)
 
-#define MAKE_OPT_HANDLER(type, x)                                       \
-  expr_t::op_t::wrap_functor(bind(&option_t<type>::handler, x, _1))
+#define MAKE_OPT_HANDLER(type, x) expr_t::op_t::wrap_functor(bind(&option_t<type>::handler, x, _1))
 
-#define MAKE_OPT_FUNCTOR(type, x)                                       \
+#define MAKE_OPT_FUNCTOR(type, x)                                                                  \
   expr_t::op_t::wrap_functor(bind(&option_t<type>::operator(), x, _1))
 
-inline bool is_eq(const char * p, const char * n) {
+inline bool is_eq(const char* p, const char* n) {
   // Test whether p matches n, substituting - in p for _ in n.
   for (; *p && *n; p++, n++) {
-    if (! (*p == '-' && *n == '_') && *p != *n)
+    if (!(*p == '-' && *n == '_') && *p != *n)
       return false;
   }
   // Ignore any trailing underscore
-  return *p == *n || (! *p && *n == '_' && ! *(n + 1));
+  return *p == *n || (!*p && *n == '_' && !*(n + 1));
 }
 
-#define OPT(name)                                                       \
-  if (is_eq(p, #name))                                                  \
-    return ((name ## handler).parent = this, &(name ## handler))
+#define OPT(name)                                                                                  \
+  if (is_eq(p, #name))                                                                             \
+  return ((name##handler).parent = this, &(name##handler))
 
-#define OPT_ALT(name, alt)                                              \
-  if (is_eq(p, #name) || is_eq(p, #alt))                                \
-    return ((name ## handler).parent = this, &(name ## handler))
+#define OPT_ALT(name, alt)                                                                         \
+  if (is_eq(p, #name) || is_eq(p, #alt))                                                           \
+  return ((name##handler).parent = this, &(name##handler))
 
-#define OPT_(name)                                                      \
-  if (! *(p + 1) ||                                                     \
-      ((name ## handler).wants_arg &&                                   \
-       *(p + 1) == '_' && ! *(p + 2)) ||                                \
-      is_eq(p, #name))                                                  \
-    return ((name ## handler).parent = this, &(name ## handler))
+#define OPT_(name)                                                                                 \
+  if (!*(p + 1) || ((name##handler).wants_arg && *(p + 1) == '_' && !*(p + 2)) || is_eq(p, #name)) \
+  return ((name##handler).parent = this, &(name##handler))
 
-#define OPT_CH(name)                                                    \
-  if (! *(p + 1) ||                                                     \
-      ((name ## handler).wants_arg &&                                   \
-       *(p + 1) == '_' && ! *(p + 2)))                                  \
-    return ((name ## handler).parent = this, &(name ## handler))
+#define OPT_CH(name)                                                                               \
+  if (!*(p + 1) || ((name##handler).wants_arg && *(p + 1) == '_' && !*(p + 2)))                    \
+  return ((name##handler).parent = this, &(name##handler))
 
-#define HANDLER(name) name ## handler
+#define HANDLER(name) name##handler
 #define HANDLED(name) HANDLER(name)
 
-#define OPTION(type, name)                              \
-  BEGIN(type, name)                                     \
-  {                                                     \
-    CTOR(type, name) {}                                 \
-  }                                                     \
+#define OPTION(type, name)                                                                         \
+  BEGIN(type, name) {                                                                              \
+    CTOR(type, name) {}                                                                            \
+  }                                                                                                \
   END(name)
 
-#define OPTION_(type, name, body)                       \
-  BEGIN(type, name)                                     \
-  {                                                     \
-    CTOR(type, name) {}                                 \
-    body                                                \
-  }                                                     \
-  END(name)
+#define OPTION_(type, name, ...) BEGIN(type, name){CTOR(type, name){} __VA_ARGS__} END(name)
 
-#define OPTION__(type, name, body)                      \
-  BEGIN(type, name)                                     \
-  {                                                     \
-    body                                                \
-  }                                                     \
-  END(name)
+#define OPTION_CTOR(type, name, ...) BEGIN(type, name){__VA_ARGS__} END(name)
 
-#define OTHER(name)                             \
-  parent->HANDLER(name).parent = parent;        \
+#define OTHER(name)                                                                                \
+  parent->HANDLER(name).parent = parent;                                                           \
   parent->HANDLER(name)
 
-bool process_option(const string& whence, const string& name, scope_t& scope,
-                    const char * arg, const string& varname);
+bool process_option(const string& whence, const string& name, scope_t& scope, const char* arg,
+                    const string& varname);
 
-void process_environment(const char ** envp, const string& tag,
-                         scope_t& scope);
+void process_environment(const char** envp, const string& tag, scope_t& scope);
 
 strings_list process_arguments(strings_list args, scope_t& scope);
 
-DECLARE_EXCEPTION(option_error, std::runtime_error);
+class option_error : public std::runtime_error {
+public:
+  explicit option_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~option_error() noexcept override {}
+};
 
 } // namespace ledger
-
-#endif // INCLUDED_OPTION_H

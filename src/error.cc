@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,28 +39,24 @@
 
 namespace ledger {
 
-std::ostringstream _ctxt_buffer;
-std::ostringstream _desc_buffer;
+thread_local std::ostringstream _ctxt_buffer;
+thread_local std::ostringstream _desc_buffer;
 
-string error_context()
-{
-  string context = _ctxt_buffer.str();
+string error_context() {
+  string context = _ctxt_buffer.str(); // NOLINT(bugprone-unused-local-non-trivial-variable)
   _ctxt_buffer.clear();
   _ctxt_buffer.str("");
   return context;
 }
 
-string file_context(const path& file, const std::size_t line)
-{
+string file_context(const path& file, const std::size_t line) {
   std::ostringstream buf;
   buf << '"' << file.string() << "\", line " << line << ":";
   return buf.str();
 }
 
-string line_context(const string&           line,
-                    const string::size_type pos,
-                    const string::size_type end_pos)
-{
+string line_context(const string& line, const string::size_type pos,
+                    const string::size_type end_pos) {
   std::ostringstream buf;
   buf << "  " << line << "\n";
 
@@ -82,36 +78,38 @@ string line_context(const string&           line,
   return buf.str();
 }
 
-string source_context(const path&                  file,
-                      const std::istream::pos_type pos,
-                      const std::istream::pos_type end_pos,
-                      const string&                prefix)
-{
+string source_context(const path& file, const std::istream::pos_type pos,
+                      const std::istream::pos_type end_pos, const string& prefix) {
   const std::streamoff len = end_pos - pos;
-  if (! len || file.empty())
+  if (!len || file.empty())
     return _("<no source context>");
 
   assert(len > 0);
-  assert(len < 65536);
+
+  // Limit the amount of source text shown in error context to avoid unbounded
+  // memory allocation for very large transactions (e.g. equity reports).
+  const std::streamoff MAX_CONTEXT_DISPLAY = 4096;
+  const bool truncated = len > MAX_CONTEXT_DISPLAY;
+  const std::streamoff read_len = truncated ? MAX_CONTEXT_DISPLAY : len;
 
   std::ostringstream out;
 
+  std::unique_ptr<std::istream> in(
 #if HAVE_GPGME
-  std::istream* in(decrypted_stream_t::open_stream(file));
+      decrypted_stream_t::open_stream(file)
 #else
-  std::istream* in(new ifstream(file));
+      new ifstream(file, std::ios::binary)
 #endif
+  );
   in->seekg(pos, std::ios::beg);
 
-  scoped_array<char> buf(new char[static_cast<std::size_t>(len) + 1]);
-  in->read(buf.get(), static_cast<std::streamsize>(len));
-  assert(in->gcount() == static_cast<std::streamsize>(len));
-  buf[static_cast<std::ptrdiff_t>(len)] = '\0';
+  scoped_array<char> buf(new char[static_cast<std::size_t>(read_len) + 1]);
+  in->read(buf.get(), static_cast<std::streamsize>(read_len));
+  const std::streamsize got = in->gcount();
+  buf[static_cast<std::ptrdiff_t>(got)] = '\0';
 
   bool first = true;
-  for (char * p = std::strtok(buf.get(), "\n");
-       p;
-       p = std::strtok(NULL, "\n")) {
+  for (char* p = std::strtok(buf.get(), "\r\n"); p; p = std::strtok(nullptr, "\r\n")) {
     if (first)
       first = false;
     else
@@ -119,7 +117,9 @@ string source_context(const path&                  file,
     out << prefix << p;
   }
 
-  delete(in);
+  if (truncated)
+    out << '\n' << prefix << "...(context truncated)";
+
   return out.str();
 }
 

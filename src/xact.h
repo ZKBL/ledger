@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,42 +39,34 @@
  *
  * @ingroup data
  */
-#ifndef INCLUDED_XACT_H
-#define INCLUDED_XACT_H
+#pragma once
+
+#include <utility>
 
 #include "item.h"
 #include "predicate.h"
+#include "types.h"
 
 namespace ledger {
 
-class post_t;
 class journal_t;
 class parse_context_t;
 
-typedef std::list<post_t *> posts_list;
-
-class xact_base_t : public item_t
-{
+class xact_base_t : public item_t {
 public:
-  journal_t * journal;
-  posts_list  posts;
+  journal_t* journal;
+  posts_list posts;
 
-  xact_base_t() : item_t(), journal(NULL) {
-    TRACE_CTOR(xact_base_t, "");
-  }
+  xact_base_t() : item_t(), journal(nullptr) { TRACE_CTOR(xact_base_t, ""); }
   xact_base_t(const xact_base_t& e);
 
-  virtual ~xact_base_t();
+  ~xact_base_t() override;
 
-  virtual void add_post(post_t * post);
-  virtual bool remove_post(post_t * post);
+  virtual void add_post(post_t* post);
+  virtual bool remove_post(post_t* post);
 
-  posts_list::iterator posts_begin() {
-    return posts.begin();
-  }
-  posts_list::iterator posts_end() {
-    return posts.end();
-  }
+  posts_list::iterator posts_begin() { return posts.begin(); }
+  posts_list::iterator posts_end() { return posts.end(); }
 
   value_t magnitude() const;
 
@@ -84,35 +76,20 @@ public:
   bool has_xdata();
   void clear_xdata();
 
-  virtual bool valid() const {
-    return true;
-  }
+  virtual bool valid() const { return true; }
 };
 
-class xact_t : public xact_base_t
-{
+class xact_t : public xact_base_t {
 public:
-  optional<string> code;
-  string           payee;
+  std::optional<string> code;
+  string payee;
 
-#if DOCUMENT_MODEL
-  mutable void * data;
-#endif
-
-  xact_t()
-#if DOCUMENT_MODEL
-    : data(NULL)
-#endif
-  {
-    TRACE_CTOR(xact_t, "");
-  }
+  xact_t() { TRACE_CTOR(xact_t, ""); }
   xact_t(const xact_t& e);
 
-  virtual ~xact_t() {
-    TRACE_DTOR(xact_t);
-  }
+  ~xact_t() override { TRACE_DTOR(xact_t); }
 
-  virtual string description() {
+  string description() override {
     if (pos) {
       std::ostringstream buf;
       buf << _f("transaction at line %1%") % pos->beg_line;
@@ -122,59 +99,61 @@ public:
     }
   }
 
-  virtual void add_post(post_t * post);
+  void add_post(post_t* post) override;
 
-  virtual expr_t::ptr_op_t lookup(const symbol_t::kind_t kind,
-                                  const string& name);
+  expr_t::ptr_op_t lookup(const symbol_t::kind_t kind, const string& name) override;
 
-  virtual bool valid() const;
+  bool valid() const override;
+
+  string hash(const string& nonce, hash_type_t hash_type) const;
 };
 
-class auto_xact_t : public xact_base_t
-{
+class auto_xact_t : public xact_base_t {
 public:
-  predicate_t            predicate;
-  bool                   try_quick_match;
+  predicate_t predicate;
+  optional<string> name;
+  bool try_quick_match;
   std::map<string, bool> memoized_results;
+  bool enabled;
 
   optional<expr_t::check_expr_list> check_exprs;
 
   struct deferred_tag_data_t {
-    string   tag_data;
-    bool     overwrite_existing;
-    post_t * apply_to_post;
+    string tag_data;
+    bool overwrite_existing;
+    post_t* apply_to_post;
 
-    deferred_tag_data_t(string _tag_data,
-                        bool   _overwrite_existing)
-      : tag_data(_tag_data), overwrite_existing(_overwrite_existing),
-        apply_to_post(NULL) {}
+    deferred_tag_data_t(string _tag_data, bool _overwrite_existing)
+        : tag_data(std::move(_tag_data)), overwrite_existing(_overwrite_existing),
+          apply_to_post(nullptr) {}
   };
 
-  typedef std::list<deferred_tag_data_t> deferred_notes_list;
+  using deferred_notes_list = std::list<deferred_tag_data_t>;
 
   optional<deferred_notes_list> deferred_notes;
-  post_t * active_post;
+  post_t* active_post;
 
-  auto_xact_t() : try_quick_match(true), active_post(NULL) {
-    TRACE_CTOR(auto_xact_t, "");
-  }
+  auto_xact_t() : try_quick_match(true), active_post(nullptr) { TRACE_CTOR(auto_xact_t, ""); }
   auto_xact_t(const auto_xact_t& other)
-    : xact_base_t(), predicate(other.predicate),
-      try_quick_match(other.try_quick_match),
-      active_post(other.active_post) {
+      : xact_base_t(other), predicate(other.predicate), name(other.name),
+        try_quick_match(other.try_quick_match), enabled(other.enabled),
+        active_post(other.active_post) {
     TRACE_CTOR(auto_xact_t, "copy");
   }
   auto_xact_t(const predicate_t& _predicate)
-    : predicate(_predicate), try_quick_match(true), active_post(NULL)
-  {
+      : predicate(_predicate), name(none), try_quick_match(true), enabled(true),
+        active_post(nullptr) {
+    TRACE_CTOR(auto_xact_t, "const predicate_t&");
+  }
+  auto_xact_t(const predicate_t& _predicate, optional<string> _name)
+      : predicate(_predicate), name(std::move(_name)), try_quick_match(true), enabled(true),
+        active_post(nullptr) {
     TRACE_CTOR(auto_xact_t, "const predicate_t&");
   }
 
-  virtual ~auto_xact_t() {
-    TRACE_DTOR(auto_xact_t);
-  }
+  ~auto_xact_t() override { TRACE_DTOR(auto_xact_t); }
 
-  virtual string description() {
+  string description() override {
     if (pos) {
       std::ostringstream buf;
       buf << _f("automated transaction at line %1%") % pos->beg_line;
@@ -184,9 +163,8 @@ public:
     }
   }
 
-  virtual void parse_tags(const char * p, scope_t&,
-                          bool overwrite_existing = true) {
-    if (! deferred_notes)
+  void parse_tags(const char* p, scope_t&, bool overwrite_existing = true) override {
+    if (!deferred_notes)
       deferred_notes = deferred_notes_list();
     deferred_notes->push_back(deferred_tag_data_t(p, overwrite_existing));
     deferred_notes->back().apply_to_post = active_post;
@@ -195,29 +173,23 @@ public:
   virtual void extend_xact(xact_base_t& xact, parse_context_t& context);
 };
 
-class period_xact_t : public xact_base_t
-{
- public:
+class period_xact_t : public xact_base_t {
+public:
   date_interval_t period;
-  string          period_string;
+  string period_string;
 
-  period_xact_t() {
-    TRACE_CTOR(period_xact_t, "");
-  }
+  period_xact_t() { TRACE_CTOR(period_xact_t, ""); }
   period_xact_t(const period_xact_t& e)
-    : xact_base_t(e), period(e.period), period_string(e.period_string) {
+      : xact_base_t(e), period(e.period), period_string(e.period_string) {
     TRACE_CTOR(period_xact_t, "copy");
   }
-  period_xact_t(const string& _period)
-    : period(_period), period_string(_period) {
+  period_xact_t(const string& _period) : period(_period), period_string(_period) {
     TRACE_CTOR(period_xact_t, "const string&");
   }
 
-  virtual ~period_xact_t() {
-    TRACE_DTOR(period_xact_t);
-  }
+  ~period_xact_t() override { TRACE_DTOR(period_xact_t); }
 
-  virtual string description() {
+  string description() override {
     if (pos) {
       std::ostringstream buf;
       buf << _f("periodic transaction at line %1%") % pos->beg_line;
@@ -228,12 +200,6 @@ class period_xact_t : public xact_base_t
   }
 };
 
-typedef std::list<xact_t *>        xacts_list;
-typedef std::list<auto_xact_t *>   auto_xacts_list;
-typedef std::list<period_xact_t *> period_xacts_list;
-
 void put_xact(property_tree::ptree& pt, const xact_t& xact);
 
 } // namespace ledger
-
-#endif // INCLUDED_XACT_H

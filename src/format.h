@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,7 @@
  *
  * @ingroup expr
  */
-#ifndef INCLUDED_FORMAT_H
-#define INCLUDED_FORMAT_H
+#pragma once
 
 #include "expr.h"
 #include "unistring.h"
@@ -51,44 +50,43 @@ namespace ledger {
 
 class unistring;
 
-DECLARE_EXCEPTION(format_error, std::runtime_error);
+class format_error : public std::runtime_error {
+public:
+  explicit format_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~format_error() noexcept override {}
+};
 
-class format_t : public expr_base_t<string>, public noncopyable
-{
-  typedef expr_base_t<string> base_type;
+class format_t : public expr_base_t<string>, public noncopyable {
+  using base_type = expr_base_t<string>;
 
-  struct element_t : public supports_flags<>, public noncopyable
-  {
+  struct element_t : public flags::supports_flags<>, public noncopyable {
 #define ELEMENT_ALIGN_LEFT 0x01
 
-    enum kind_t { STRING, EXPR };
+    enum kind_t : uint8_t { STRING, EXPR };
 
-    kind_t                       type;
-    std::size_t                  min_width;
-    std::size_t                  max_width;
-    variant<string, expr_t>      data;
+    kind_t type;
+    std::size_t min_width;
+    std::size_t max_width;
+    std::variant<string, expr_t> data;
     scoped_ptr<struct element_t> next;
 
-    element_t() throw()
-      : supports_flags<>(), type(STRING), min_width(0), max_width(0) {
+    element_t() noexcept : supports_flags<>(), type(STRING), min_width(0), max_width(0) {
       TRACE_CTOR(element_t, "");
     }
-    ~element_t() throw() {
-      TRACE_DTOR(element_t);
-    }
+    ~element_t() noexcept { TRACE_DTOR(element_t); }
 
     element_t& operator=(const element_t& elem) {
       if (this != &elem) {
         supports_flags<>::operator=(elem);
-        type      = elem.type;
+        type = elem.type;
         min_width = elem.min_width;
         max_width = elem.max_width;
-        data      = elem.data;
+        data = elem.data;
       }
       return *this;
     }
 
-    friend inline void mark_red(std::ostream& out, const element_t * elem) {
+    friend inline void mark_red(std::ostream& out, const element_t* elem) {
       out.setf(std::ios::left);
       out.width(0);
       out << "\033[31m";
@@ -108,7 +106,7 @@ class format_t : public expr_base_t<string>, public noncopyable
   scoped_ptr<element_t> elements;
 
 public:
-  static enum elision_style_t {
+  static enum elision_style_t : uint8_t {
     TRUNCATE_TRAILING,
     TRUNCATE_MIDDLE,
     TRUNCATE_LEADING,
@@ -118,52 +116,40 @@ public:
   static bool default_style_changed;
 
 private:
-  static element_t * parse_elements(const string& fmt,
-                                    const optional<format_t&>& tmpl);
+  static element_t* parse_elements(const string& fmt, const optional<format_t&>& tmpl);
 
 public:
-  format_t() : base_type() {
-    TRACE_CTOR(format_t, "");
-  }
-  format_t(const string& _str, scope_t * context = NULL)
-    : base_type(context) {
-    if (! _str.empty())
+  format_t() : base_type() { TRACE_CTOR(format_t, ""); }
+  format_t(const string& _str, scope_t* context = nullptr) : base_type(context) {
+    if (!_str.empty())
       parse_format(_str);
     TRACE_CTOR(format_t, "const string&");
   }
-  virtual ~format_t() {
-    TRACE_DTOR(format_t);
-  }
+  ~format_t() override { TRACE_DTOR(format_t); }
 
-  void parse_format(const string& _format,
-                    const optional<format_t&>& tmpl = none) {
+  void parse_format(const string& _format, const optional<format_t&>& tmpl = none) {
     elements.reset(parse_elements(_format, tmpl));
     set_text(_format);
   }
 
-  virtual void mark_uncompiled() {
-    for (element_t * elem = elements.get(); elem; elem = elem->next.get()) {
+  void mark_uncompiled() override {
+    for (element_t* elem = elements.get(); elem; elem = elem->next.get()) {
       if (elem->type == element_t::EXPR) {
-        expr_t& expr(boost::get<expr_t>(elem->data));
+        expr_t& expr(std::get<expr_t>(elem->data));
         expr.mark_uncompiled();
       }
     }
   }
 
-  virtual result_type real_calc(scope_t& scope);
+  result_type real_calc(scope_t& scope) override;
 
-  virtual void dump(std::ostream& out) const {
-    for (const element_t * elem = elements.get();
-         elem;
-         elem = elem->next.get())
+  void dump(std::ostream& out) const override {
+    for (const element_t* elem = elements.get(); elem; elem = elem->next.get())
       elem->dump(out);
   }
 
-  static string truncate(const unistring&  str,
-                         const std::size_t width,
+  static string truncate(const unistring& str, const std::size_t width,
                          const std::size_t account_abbrev_length = 0);
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_FORMAT_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -30,6 +30,7 @@
  */
 
 #include <system.hh>
+#include <utility>
 
 #include "chain.h"
 #include "predicate.h"
@@ -39,24 +40,19 @@
 
 namespace ledger {
 
-post_handler_ptr chain_pre_post_handlers(post_handler_ptr base_handler,
-                                         report_t&        report)
-{
-  post_handler_ptr handler(base_handler);
+post_handler_ptr chain_pre_post_handlers(post_handler_ptr base_handler, report_t& report) {
+  post_handler_ptr handler(std::move(base_handler));
 
   // anonymize_posts removes all meaningful information from xact payee's and
   // account names, for the sake of creating useful bug reports.
   if (report.HANDLED(anon))
-    handler.reset(new anonymize_posts(handler));
+    handler = std::make_shared<anonymize_posts>(handler);
 
   // This filter_posts will only pass through posts matching the `predicate'.
   if (report.HANDLED(limit_)) {
-    DEBUG("report.predicate",
-          "Report predicate expression = " << report.HANDLER(limit_).str());
-    handler.reset(new filter_posts
-                  (handler, predicate_t(report.HANDLER(limit_).str(),
-                                        report.what_to_keep()),
-                   report));
+    DEBUG("report.predicate", "Report predicate expression = " << report.HANDLER(limit_).str());
+    handler = std::make_shared<filter_posts>(
+        handler, predicate_t(report.HANDLER(limit_).str(), report.what_to_keep()), report);
   }
 
   // budget_posts takes a set of posts from a data file and uses them to
@@ -67,52 +63,42 @@ post_handler_ptr chain_pre_post_handlers(post_handler_ptr base_handler,
   // future balance.
 
   if (report.budget_flags != BUDGET_NO_BUDGET) {
-    budget_posts * budget_handler =
-      new budget_posts(handler, report.terminus.date(), report.budget_flags);
+    auto budget_handler =
+        std::make_shared<budget_posts>(handler, report.terminus.date(), report.budget_flags);
     budget_handler->add_period_xacts(report.session.journal->period_xacts);
-    handler.reset(budget_handler);
+    handler = budget_handler;
 
     // Apply this before the budget handler, so that only matching posts are
     // calculated toward the budget.  The use of filter_posts above will
     // further clean the results so that no automated posts that don't match
     // the filter get reported.
     if (report.HANDLED(limit_))
-      handler.reset(new filter_posts
-                    (handler, predicate_t(report.HANDLER(limit_).str(),
-                                          report.what_to_keep()),
-                     report));
-  }
-  else if (report.HANDLED(forecast_while_)) {
-    forecast_posts * forecast_handler
-      = new forecast_posts(handler,
-                           predicate_t(report.HANDLER(forecast_while_).str(),
-                                       report.what_to_keep()),
-                           report,
-                           (report.HANDLED(forecast_years_) ?
-                            lexical_cast<std::size_t>
-                            (report.HANDLER(forecast_years_).value) : 5UL));
+      handler = std::make_shared<filter_posts>(
+          handler, predicate_t(report.HANDLER(limit_).str(), report.what_to_keep()), report);
+  } else if (report.HANDLED(forecast_while_)) {
+    auto forecast_handler = std::make_shared<forecast_posts>(
+        handler, predicate_t(report.HANDLER(forecast_while_).str(), report.what_to_keep()), report,
+        (report.HANDLED(forecast_years_)
+             ? lexical_cast<std::size_t>(report.HANDLER(forecast_years_).value)
+             : 5UL));
     forecast_handler->add_period_xacts(report.session.journal->period_xacts);
-    handler.reset(forecast_handler);
+    handler = forecast_handler;
 
     // See above, under budget_posts.
     if (report.HANDLED(limit_))
-      handler.reset(new filter_posts
-                    (handler, predicate_t(report.HANDLER(limit_).str(),
-                                          report.what_to_keep()),
-                     report));
+      handler = std::make_shared<filter_posts>(
+          handler, predicate_t(report.HANDLER(limit_).str(), report.what_to_keep()), report);
   }
 
   return handler;
 }
 
-post_handler_ptr chain_post_handlers(post_handler_ptr base_handler,
-                                     report_t&        report,
-                                     bool             for_accounts_report)
-{
-  post_handler_ptr       handler(base_handler);
-  predicate_t            display_predicate;
-  predicate_t            only_predicate;
-  display_filter_posts * display_filter = NULL;
+post_handler_ptr chain_post_handlers(post_handler_ptr base_handler, report_t& report,
+                                     bool for_accounts_report) {
+  post_handler_ptr handler(std::move(base_handler));
+  predicate_t display_predicate;
+  predicate_t only_predicate;
+  display_filter_posts* display_filter = nullptr;
 
   expr_t& expr(report.HANDLER(amount_).expr);
   expr.set_context(&report);
@@ -121,74 +107,103 @@ post_handler_ptr chain_post_handlers(post_handler_ptr base_handler,
   report.HANDLER(display_amount_).expr.set_context(&report);
   report.HANDLER(display_total_).expr.set_context(&report);
 
-  if (! for_accounts_report) {
+  if (!for_accounts_report) {
     // Make sure only forecast postings which match are allowed through
     if (report.HANDLED(forecast_while_)) {
-      handler.reset(new filter_posts
-                    (handler, predicate_t(report.HANDLER(forecast_while_).str(),
-                                          report.what_to_keep()),
-                     report));
+      handler = std::make_shared<filter_posts>(
+          handler, predicate_t(report.HANDLER(forecast_while_).str(), report.what_to_keep()),
+          report);
     }
 
     // truncate_xacts cuts off a certain number of _xacts_ from being
     // displayed.  It does not affect calculation.
     if (report.HANDLED(head_) || report.HANDLED(tail_))
-      handler.reset
-        (new truncate_xacts(handler,
-                            report.HANDLED(head_) ?
-                            lexical_cast<int>(report.HANDLER(head_).value) : 0,
-                            report.HANDLED(tail_) ?
-                            lexical_cast<int>(report.HANDLER(tail_).value) : 0));
+      handler = std::make_shared<truncate_xacts>(
+          handler, report.HANDLED(head_) ? lexical_cast<int>(report.HANDLER(head_).value) : 0,
+          report.HANDLED(tail_) ? lexical_cast<int>(report.HANDLER(tail_).value) : 0);
 
     // display_filter_posts adds virtual posts to the list to account
     // for changes in value of commodities, which otherwise would affect
     // the running total unpredictably.
-    display_filter = new display_filter_posts(handler, report,
-                                              report.HANDLED(revalued) &&
-                                              ! report.HANDLED(no_rounding));
-    handler.reset(display_filter);
+    auto display_filter_sp = std::make_shared<display_filter_posts>(
+        handler, report, report.HANDLED(revalued) && !report.HANDLED(no_rounding));
+    display_filter = display_filter_sp.get();
+    handler = std::move(display_filter_sp);
 
     // filter_posts will only pass through posts matching the
     // `display_predicate'.
     if (report.HANDLED(display_)) {
-      display_predicate = predicate_t(report.HANDLER(display_).str(),
-                                      report.what_to_keep());
-      handler.reset(new filter_posts(handler, display_predicate, report));
+      display_predicate = predicate_t(report.HANDLER(display_).str(), report.what_to_keep());
+      handler = std::make_shared<filter_posts>(handler, display_predicate, report);
     }
   }
 
   // changed_value_posts adds virtual posts to the list to account for changes
   // in market value of commodities, which otherwise would affect the running
   // total unpredictably.
-  if (report.HANDLED(revalued) &&
-      (! for_accounts_report || report.HANDLED(unrealized)))
-    handler.reset(new changed_value_posts(handler, report, for_accounts_report,
-                                          report.HANDLED(unrealized),
-                                          display_filter));
+  if (report.HANDLED(revalued) && (!for_accounts_report || report.HANDLED(unrealized)))
+    handler = std::make_shared<changed_value_posts>(handler, report, for_accounts_report,
+                                                    report.HANDLED(unrealized), display_filter);
 
   // calc_posts computes the running total.  When this appears will determine,
   // for example, whether filtered posts are included or excluded from the
   // running total.
-  handler.reset(new calc_posts(handler, expr, (! for_accounts_report ||
-                                               (report.HANDLED(revalued) &&
-                                                report.HANDLED(unrealized)))));
+  {
+    bool calc_running =
+        (!for_accounts_report || (report.HANDLED(revalued) && report.HANDLED(unrealized)));
+
+    // Enable incremental stripped total maintenance when the display_total
+    // and total expressions are unmodified (default "total" accumulation)
+    // and annotations need stripping.  This allows the format's
+    // scrub(display_total) to use the pre-stripped value from xdata,
+    // avoiding expensive O(K) GMP arithmetic per posting.
+    keep_details_t wtk = report.what_to_keep();
+    bool maintain_stripped = calc_running && report.HANDLER(display_total_).expr.exprs.empty() &&
+                             report.HANDLER(display_total_).expr.base_expr == "total_expr" &&
+                             report.HANDLER(total_).expr.exprs.empty() &&
+                             report.HANDLER(total_).expr.base_expr == "total" && !wtk.keep_all();
+
+    handler = std::make_shared<calc_posts>(handler, expr, calc_running, maintain_stripped, wtk);
+  }
 
   // filter_posts will only pass through posts matching the
   // `secondary_predicate'.
   if (report.HANDLED(only_)) {
-    only_predicate = predicate_t(report.HANDLER(only_).str(),
-                                 report.what_to_keep());
-    handler.reset(new filter_posts(handler, only_predicate, report));
+    only_predicate = predicate_t(report.HANDLER(only_).str(), report.what_to_keep());
+    handler = std::make_shared<filter_posts>(handler, only_predicate, report);
   }
 
-  if (! for_accounts_report) {
+  if (!for_accounts_report) {
     // sort_posts will sort all the posts it sees, based on the `sort_order'
-    // value expression.
+    // value expression.  sort_xacts sorts posts within each transaction.
     if (report.HANDLED(sort_)) {
-      if (report.HANDLED(sort_xacts_))
-        handler.reset(new sort_xacts(handler, expr_t(report.HANDLER(sort_).str()), report));
-      else
-        handler.reset(new sort_posts(handler, report.HANDLER(sort_).str(), report));
+      bool xacts_only = false;
+
+      if (report.HANDLED(sort_xacts_)) {
+        // sort_xacts_ may have its own expression (from --sort-xacts), or
+        // it may have been activated without a value (from period sorting
+        // via normalize_period).  Check value directly since str() throws
+        // on empty values.
+        const string& sort_xacts_value = report.HANDLER(sort_xacts_).value;
+        if (sort_xacts_value.empty()) {
+          // Activated from period sorting: use sort_'s expression for
+          // within-transaction sorting only, no global sort.
+          handler =
+              std::make_shared<sort_xacts>(handler, expr_t(report.HANDLER(sort_).str()), report);
+          xacts_only = true;
+        } else {
+          // --sort-xacts given explicitly with its own expression: apply
+          // within-transaction sort first, then global sort (from --sort).
+          handler = std::make_shared<sort_xacts>(handler, expr_t(sort_xacts_value), report);
+        }
+      }
+
+      if (!xacts_only)
+        handler = std::make_shared<sort_posts>(handler, report.HANDLER(sort_).str(), report);
+    } else if (report.HANDLED(sort_xacts_)) {
+      const string& sort_xacts_value = report.HANDLER(sort_xacts_).value;
+      if (!sort_xacts_value.empty())
+        handler = std::make_shared<sort_xacts>(handler, expr_t(sort_xacts_value), report);
     }
 
     // collapse_posts causes xacts with multiple posts to appear as xacts
@@ -198,10 +213,9 @@ post_handler_ptr chain_post_handlers(post_handler_ptr base_handler,
       if (report.HANDLED(depth_))
         collapse_depth = lexical_cast<int>(report.HANDLER(depth_).str());
 
-      handler.reset(new collapse_posts(handler, report, expr,
-                                       display_predicate, only_predicate,
-                                       report.HANDLED(collapse_if_zero),
-                                       collapse_depth));
+      handler =
+          std::make_shared<collapse_posts>(handler, report, expr, display_predicate, only_predicate,
+                                           report.HANDLED(collapse_if_zero), collapse_depth);
     }
 
     // subtotal_posts combines all the posts it receives into one subtotal
@@ -213,60 +227,58 @@ post_handler_ptr chain_post_handlers(post_handler_ptr base_handler,
     // day_of_week_posts is like period_posts, except that it reports
     // all the posts that fall on each subsequent day of the week.
     if (report.HANDLED(equity))
-      handler.reset(new posts_as_equity(handler, report, expr));
+      handler = std::make_shared<posts_as_equity>(handler, report, expr, report.HANDLED(unround));
     else if (report.HANDLED(subtotal))
-      handler.reset(new subtotal_posts(handler, expr));
+      handler = std::make_shared<subtotal_posts>(handler, expr);
   }
 
   if (report.HANDLED(dow))
-    handler.reset(new day_of_week_posts(handler, expr));
+    handler = std::make_shared<day_of_week_posts>(handler, expr);
   else if (report.HANDLED(by_payee))
-    handler.reset(new by_payee_posts(handler, expr));
+    handler = std::make_shared<by_payee_posts>(handler, expr);
 
   // interval_posts groups posts together based on a time period, such as
   // weekly or monthly.
   if (report.HANDLED(period_))
-    handler.reset(new interval_posts(handler, expr,
-                                     report.HANDLER(period_).str(),
-                                     report.HANDLED(exact),
-                                     report.HANDLED(empty)));
+    handler = std::make_shared<interval_posts>(handler, expr, report.HANDLER(period_).str(),
+                                               report.HANDLED(exact), report.HANDLED(empty),
+                                               report.HANDLED(align_intervals));
 
   if (report.HANDLED(date_))
-    handler.reset(new transfer_details(handler, transfer_details::SET_DATE,
-                                       report.session.journal->master,
-                                       report.HANDLER(date_).str(),
-                                       report));
+    handler = std::make_shared<transfer_details>(handler, transfer_details::SET_DATE,
+                                                 report.session.journal->master,
+                                                 report.HANDLER(date_).str(), report);
 
   if (report.HANDLED(account_)) {
-    handler.reset(new transfer_details(handler, transfer_details::SET_ACCOUNT,
-                                       report.session.journal->master,
-                                       report.HANDLER(account_).str(),
-                                       report));
-  }
-  else if (report.HANDLED(pivot_)) {
+    handler = std::make_shared<transfer_details>(handler, transfer_details::SET_ACCOUNT,
+                                                 report.session.journal->master,
+                                                 report.HANDLER(account_).str(), report);
+  } else if (report.HANDLED(pivot_)) {
     string pivot = report.HANDLER(pivot_).str();
     pivot = string("\"") + pivot + ":\" + tag(\"" + pivot + "\")";
-    handler.reset(new transfer_details(handler, transfer_details::SET_ACCOUNT,
-                                       report.session.journal->master, pivot,
-                                       report));
+    handler = std::make_shared<transfer_details>(handler, transfer_details::SET_ACCOUNT,
+                                                 report.session.journal->master, pivot, report);
   }
 
   if (report.HANDLED(payee_))
-    handler.reset(new transfer_details(handler, transfer_details::SET_PAYEE,
-                                       report.session.journal->master,
-                                       report.HANDLER(payee_).str(),
-                                       report));
+    handler = std::make_shared<transfer_details>(handler, transfer_details::SET_PAYEE,
+                                                 report.session.journal->master,
+                                                 report.HANDLER(payee_).str(), report);
+
+  if (!report.session.journal->payee_rewrite_mappings.empty() ||
+      !report.session.journal->account_rewrite_mappings.empty())
+    handler = std::make_shared<rewrite_posts>(handler, report);
 
   // related_posts will pass along all posts related to the post received.  If
   // the `related_all' handler is on, then all the xact's posts are passed;
   // meaning that if one post of an xact is to be printed, all the post for
   // that xact will be printed.
   if (report.HANDLED(related))
-    handler.reset(new related_posts(handler, report.HANDLED(related_all)));
+    handler = std::make_shared<related_posts>(handler, report.HANDLED(related_all));
 
   if (report.HANDLED(inject_))
-    handler.reset(new inject_posts(handler, report.HANDLED(inject_).str(),
-                                   report.session.journal->master));
+    handler = std::make_shared<inject_posts>(handler, report.HANDLED(inject_).str(),
+                                             report.session.journal->master);
 
   return handler;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,86 +31,109 @@
 
 #include <system.hh>
 
+#define BOOST_IOSTREAMS_USE_DEPRECATED 1
+#include <boost/iostreams/device/file_descriptor.hpp>
+
 #include "stream.h"
 
 namespace ledger {
 
 namespace {
-  /**
-   * @brief Forks a child process so that Ledger may handle running a
-   * pager
-   *
-   * In order for the pager option to work, Ledger has to run the pager
-   * itself, which requires Ledger to fork a new process in order to run
-   * the pager.  This function does the necessary fork.  After the fork,
-   * two processes exist.  One of them is exec'd to create the pager;
-   * the other is still Ledger.
-   *
-   * This function returns only for the process that is still Ledger.
-   *
-   * @param pager_path Path to the pager command.
-   *
-   * @return The file descriptor of the pipe to the pager.  The caller
-   * is responsible for cleaning this up.
-   *
-   * @exception std::logic_error Some problem was encountered, such as
-   * failure to create a pipe or failure to fork a child process.
-   */
-  int do_fork(std::ostream ** os, const path& pager_path)
-  {
+/**
+ * @brief Forks a child process so that Ledger may handle running a
+ * pager
+ *
+ * In order for the pager option to work, Ledger has to run the pager
+ * itself, which requires Ledger to fork a new process in order to run
+ * the pager.  This function does the necessary fork.  After the fork,
+ * two processes exist.  One of them is exec'd to create the pager;
+ * the other is still Ledger.
+ *
+ * This function returns only for the process that is still Ledger.
+ *
+ * @param os Pointer to the ostream pointer to be initialized
+ * @param pager_path Path to the pager command.
+ * @param pager_pid Pointer to store the PID of the pager process
+ *
+ * @return The file descriptor of the pipe to the pager.  The caller
+ * is responsible for cleaning this up.
+ *
+ * @exception std::logic_error Some problem was encountered, such as
+ * failure to create a pipe or failure to fork a child process.
+ */
+int do_fork(std::ostream** os, const path& pager_path, pid_t* pager_pid) {
 #if !defined(_WIN32) && !defined(__CYGWIN__)
-    int pfd[2];
+  int pfd[2];
 
-    int status = pipe(pfd);
+  int status = pipe(pfd);
+  if (status == -1)
+    throw std::logic_error(_("Failed to create pipe"));
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    throw std::logic_error(_("Failed to fork child process"));
+  } else if (pid == 0) { // child
+    // Duplicate pipe's reading end into stdin
+    status = dup2(pfd[0], STDIN_FILENO);
     if (status == -1)
-      throw std::logic_error(_("Failed to create pipe"));
+      perror("dup2");
 
-    status = fork();
-    if (status < 0) {
-      throw std::logic_error(_("Failed to fork child process"));
-    }
-    else if (status == 0) {     // child
-      // Duplicate pipe's reading end into stdin
-      status = dup2(pfd[0], STDIN_FILENO);
-      if (status == -1)
-        perror("dup2");
+    // Close unused file descriptors: the pipe's writing and reading
+    // ends (the latter is not needed anymore, after the duplication).
+    close(pfd[1]);
+    close(pfd[0]);
 
-      // Close unused file descriptors: the pipe's writing and reading
-      // ends (the latter is not needed anymore, after the duplication).
-      close(pfd[1]);
-      close(pfd[0]);
+    // Split pager_path into argv to avoid shell injection
+    string pager_str = pager_path.string();
+    std::vector<string> parts;
+    std::istringstream iss(pager_str);
+    string token;
+    while (iss >> token)
+      parts.push_back(token);
 
-      execlp("/bin/sh", "/bin/sh", "-c", pager_path.string().c_str(), NULL);
+    std::vector<const char*> argv;
+    argv.reserve(parts.size() + 1);
+    for (auto& s : parts)
+      argv.push_back(s.c_str());
+    argv.push_back(nullptr);
 
-      // We should never, ever reach here
-      perror("execlp: /bin/sh");
-      exit(1);
-    }
-    else {                      // parent
-      close(pfd[0]);
-      typedef iostreams::stream<iostreams::file_descriptor_sink> fdstream;
-      *os = new fdstream(pfd[1], iostreams::never_close_handle);
-    }
-    return pfd[1];
-#else
-    return 0;
-#endif
+    execvp(argv[0], const_cast<char* const*>(argv.data()));
+
+    // We should never, ever reach here
+    perror("execvp");
+    exit(1);
+  } else { // parent
+    close(pfd[0]);
+    typedef iostreams::stream<iostreams::file_descriptor_sink> fdstream;
+    *os = new fdstream(pfd[1], iostreams::never_close_handle);
+    *pager_pid = pid;
   }
+  return pfd[1];
+#else
+  return 0;
+#endif
 }
+} // namespace
 
 void output_stream_t::initialize(const optional<path>& output_file,
-                                 const optional<path>& pager_path)
-{
-  if (output_file && *output_file != "-")
+                                 const optional<path>& pager_path) {
+  // Clean up any previous state before re-initializing
+  close();
+
+  // NOLINTBEGIN(bugprone-branch-clone)
+  if (output_file && *output_file != "-") {
     os = new ofstream(*output_file);
-  else if (pager_path)
-    pipe_to_pager_fd = do_fork(&os, *pager_path);
-  else
+  } else if (pager_path) {
+#if !defined(_WIN32) && !defined(__CYGWIN__)
+    pipe_to_pager_fd = do_fork(&os, *pager_path, &pager_pid);
+#endif
+  } else {
     os = &std::cout;
+  }
+  // NOLINTEND(bugprone-branch-clone)
 }
 
-void output_stream_t::close()
-{
+void output_stream_t::close() {
 #if !defined(_WIN32) && !defined(__CYGWIN__)
   if (os != &std::cout) {
     checked_delete(os);
@@ -121,10 +144,13 @@ void output_stream_t::close()
     ::close(pipe_to_pager_fd);
     pipe_to_pager_fd = -1;
 
-    int status;
-    wait(&status);
-    if (! WIFEXITED(status) || WEXITSTATUS(status) != 0)
-      throw std::logic_error(_("Error in the pager"));
+    if (pager_pid != -1) {
+      int status;
+      waitpid(pager_pid, &status, 0);
+      pager_pid = -1;
+      if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        std::cerr << "Warning: pager process exited abnormally" << '\n';
+    }
   }
 #endif
 }

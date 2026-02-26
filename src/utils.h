@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -41,38 +41,12 @@
  *
  * @brief General utility facilities used by Ledger
  */
-#ifndef INCLUDED_UTILS_H
-#define INCLUDED_UTILS_H
+#pragma once
 
-#if (BOOST_VERSION >= 106600)
 #include <boost/uuid/detail/sha1.hpp>
-#else
-#include <boost/uuid/sha1.hpp>
-#endif
+#include <ledger.hh>
 
-/**
- * @name Default values
- */
-/*@{*/
-
-#define TIMERS_ON   1
-
-#if DEBUG_MODE
-#define DEBUG_ON    1
-#define VERIFY_ON   1
-#define TRACING_ON  1
-#elif NO_ASSERTS
-#define DEBUG_ON    0
-#define VERIFY_ON   0
-#define TRACING_ON  0
-//#define NO_LOGGING  1
-#else
-#define DEBUG_ON    0
-#define VERIFY_ON   0
-#define TRACING_ON  1           // use --trace X to enable
-#endif
-
-/*@}*/
+#define TIMERS_ON 1
 
 /**
  * @name Forward declarations
@@ -80,22 +54,23 @@
 /*@{*/
 
 namespace ledger {
-  using namespace boost;
+using namespace boost;
 
-  typedef std::string string;
-  typedef std::list<string> strings_list;
+using string = std::string;
+using string_view = std::string_view;
+using strings_list = std::list<string>;
 
-  typedef posix_time::ptime         ptime;
-  typedef ptime::time_duration_type time_duration;
-  typedef gregorian::date           date;
-  typedef gregorian::date_duration  date_duration;
-  typedef posix_time::seconds       seconds;
+using ptime = posix_time::ptime;
+using time_duration = ptime::time_duration_type;
+using date = gregorian::date;
+using date_duration = gregorian::date_duration;
+using seconds = posix_time::seconds;
 
-  typedef boost::filesystem::path             path;
-  typedef boost::filesystem::ifstream         ifstream;
-  typedef boost::filesystem::ofstream         ofstream;
-  typedef boost::filesystem::filesystem_error filesystem_error;
-}
+using path = std::filesystem::path;
+using ifstream = std::ifstream;
+using ofstream = std::ofstream;
+using filesystem_error = std::filesystem::filesystem_error;
+} // namespace ledger
 
 /*@}*/
 
@@ -111,17 +86,14 @@ namespace ledger {
 #if !NO_ASSERTS
 
 namespace ledger {
-  void debug_assert(const string& reason, const string& func,
-                    const string& file, std::size_t line);
+void debug_assert(const string& reason, const string& func, const string& file, std::size_t line);
 }
 
-#define assert(x)                                               \
-  ((x) ? ((void)0) : debug_assert(#x, BOOST_CURRENT_FUNCTION,   \
-                                  __FILE__, __LINE__))
+#define assert(x) ((x) ? ((void)0) : debug_assert(#x, BOOST_CURRENT_FUNCTION, __FILE__, __LINE__))
 
 #else // !NO_ASSERTS
 
-#define assert(x)
+#define assert(x) ((void)(x))
 
 #endif // !NO_ASSERTS
 
@@ -138,7 +110,10 @@ namespace ledger {
 
 extern bool verify_enabled;
 
-#define VERIFY(x)   if (ledger::verify_enabled) { assert(x); }
+#define VERIFY(x)                                                                                  \
+  if (ledger::verify_enabled) {                                                                    \
+    assert(x);                                                                                     \
+  }
 #define DO_VERIFY() ledger::verify_enabled
 
 void initialize_memory_tracing();
@@ -147,16 +122,12 @@ void shutdown_memory_tracing();
 std::size_t current_memory_size();
 std::size_t current_objects_size();
 
-void trace_ctor_func(void * ptr, const char * cls_name, const char * args,
-                     std::size_t cls_size);
-void trace_dtor_func(void * ptr, const char * cls_name, std::size_t cls_size);
+void trace_ctor_func(void* ptr, const char* cls_name, const char* args, std::size_t cls_size);
+void trace_dtor_func(void* ptr, const char* cls_name, std::size_t cls_size);
 
-#define TRACE_CTOR(cls, args) \
-  (DO_VERIFY() ? \
-   ledger::trace_ctor_func(this, #cls, args, sizeof(cls)) : ((void)0))
-#define TRACE_DTOR(cls) \
-  (DO_VERIFY() ? \
-   ledger::trace_dtor_func(this, #cls, sizeof(cls)) : ((void)0))
+#define TRACE_CTOR(cls, args)                                                                      \
+  (DO_VERIFY() ? ledger::trace_ctor_func(this, #cls, args, sizeof(cls)) : ((void)0))
+#define TRACE_DTOR(cls) (DO_VERIFY() ? ledger::trace_dtor_func(this, #cls, sizeof(cls)) : ((void)0))
 
 void report_memory(std::ostream& out, bool report_all = false);
 
@@ -189,7 +160,7 @@ namespace ledger {
 
 extern string empty_string;
 
-strings_list split_arguments(const char * line);
+strings_list split_arguments(const char* line);
 
 inline string to_string(long num) {
   std::ostringstream buf;
@@ -204,12 +175,12 @@ inline string to_string(std::size_t num) {
 }
 
 inline string lowered(const string& str) {
-  string tmp(str);
+  string tmp(str); // NOLINT(bugprone-unused-local-non-trivial-variable)
   to_lower(tmp);
   return tmp;
 }
 
-inline string operator+(const char * left, const string& right) {
+inline string operator+(const char* left, const string& right) {
   return string(left) + right;
 }
 
@@ -222,14 +193,9 @@ inline string operator+(const char * left, const string& right) {
  */
 /*@{*/
 
-#if ! defined(NO_LOGGING)
-#define LOGGING_ON 1
-#endif
-#if LOGGING_ON
-
 namespace ledger {
 
-enum log_level_t {
+enum log_level_t : uint8_t {
   LOG_OFF = 0,
   LOG_CRIT,
   LOG_FATAL,
@@ -244,25 +210,26 @@ enum log_level_t {
   LOG_ALL
 };
 
-extern log_level_t        _log_level;
-extern std::ostream *     _log_stream;
-extern std::ostringstream _log_buffer;
+extern log_level_t _log_level;
+extern std::ostream* _log_stream;
+extern thread_local std::ostringstream _log_buffer;
 
 void logger_func(log_level_t level);
 
-#define LOGGER(cat) \
-    static const char * const _this_category = cat
+#define LOGGER(cat) static const char* const _this_category = cat
 
 #if TRACING_ON
 
 extern uint16_t _trace_level;
 
-#define SHOW_TRACE(lvl) \
-  (ledger::_log_level >= ledger::LOG_TRACE && lvl <= ledger::_trace_level)
-#define TRACE(lvl, msg) \
-  (SHOW_TRACE(lvl) ? \
-   ((ledger::_log_buffer << msg), \
-    ledger::logger_func(ledger::LOG_TRACE)) : (void)0)
+#define SHOW_TRACE(lvl) (ledger::_log_level >= ledger::LOG_TRACE && (lvl) <= ledger::_trace_level)
+#define TRACE(lvl, ...)                                                                            \
+  do {                                                                                             \
+    if (SHOW_TRACE(lvl)) {                                                                         \
+      ledger::_log_buffer << __VA_ARGS__;                                                          \
+      ledger::logger_func(ledger::LOG_TRACE);                                                      \
+    }                                                                                              \
+  } while (false)
 
 #else // TRACING_ON
 
@@ -273,23 +240,21 @@ extern uint16_t _trace_level;
 
 #if DEBUG_ON
 
-extern optional<std::string>       _log_category;
+extern optional<std::string> _log_category;
 #if HAVE_BOOST_REGEX_UNICODE
-  extern optional<boost::u32regex> _log_category_re;
+extern optional<boost::u32regex> _log_category_re;
 #else
-  extern optional<boost::regex>    _log_category_re;
+extern optional<boost::regex> _log_category_re;
 #endif
 
-inline bool category_matches(const char * cat) {
+inline bool category_matches(const char* cat) {
   if (_log_category) {
-    if (! _log_category_re) {
+    if (!_log_category_re) {
       _log_category_re =
 #if HAVE_BOOST_REGEX_UNICODE
-        boost::make_u32regex(_log_category->c_str(),
-                             boost::regex::perl | boost::regex::icase);
+          boost::make_u32regex(_log_category->c_str(), boost::regex::perl | boost::regex::icase);
 #else
-        boost::regex(_log_category->c_str(),
-                     boost::regex::perl | boost::regex::icase);
+          boost::regex(_log_category->c_str(), boost::regex::perl | boost::regex::icase);
 #endif
     }
 #if HAVE_BOOST_REGEX_UNICODE
@@ -301,75 +266,57 @@ inline bool category_matches(const char * cat) {
   return false;
 }
 
-#define SHOW_DEBUG(cat) \
-  (ledger::_log_level >= ledger::LOG_DEBUG && ledger::category_matches(cat))
+#define SHOW_DEBUG(cat) (ledger::_log_level >= ledger::LOG_DEBUG && ledger::category_matches(cat))
 #define SHOW_DEBUG_() SHOW_DEBUG(_this_category)
 
-#define DEBUG(cat, msg) \
-  (SHOW_DEBUG(cat) ? \
-   ((ledger::_log_buffer << msg), \
-    ledger::logger_func(ledger::LOG_DEBUG)) : (void)0)
-#define DEBUG_(msg) DEBUG(_this_category, msg)
+#define DEBUG(cat, ...)                                                                            \
+  do {                                                                                             \
+    if (SHOW_DEBUG(cat)) {                                                                         \
+      ledger::_log_buffer << __VA_ARGS__;                                                          \
+      ledger::logger_func(ledger::LOG_DEBUG);                                                      \
+    }                                                                                              \
+  } while (false)
+#define DEBUG_(...) DEBUG(_this_category, __VA_ARGS__)
 
 #else // DEBUG_ON
 
 #define SHOW_DEBUG(cat) false
-#define SHOW_DEBUG_()   false
+#define SHOW_DEBUG_() false
 #define DEBUG(cat, msg)
 #define DEBUG_(msg)
 
 #endif // DEBUG_ON
 
-#define LOG_MACRO(level, msg) \
-  (ledger::_log_level >= level ? \
-   ((ledger::_log_buffer << msg), ledger::logger_func(level)) : (void)0)
+#define LOG_MACRO(level, ...)                                                                      \
+  do {                                                                                             \
+    if (ledger::_log_level >= (level)) {                                                           \
+      ledger::_log_buffer << __VA_ARGS__;                                                          \
+      ledger::logger_func(level);                                                                  \
+    }                                                                                              \
+  } while (false)
 
-#define SHOW_INFO()     (ledger::_log_level >= ledger::LOG_INFO)
-#define SHOW_WARN()     (ledger::_log_level >= ledger::LOG_WARN)
-#define SHOW_ERROR()    (ledger::_log_level >= ledger::LOG_ERROR)
-#define SHOW_FATAL()    (ledger::_log_level >= ledger::LOG_FATAL)
+#define SHOW_INFO() (ledger::_log_level >= ledger::LOG_INFO)
+#define SHOW_WARN() (ledger::_log_level >= ledger::LOG_WARN)
+#define SHOW_ERROR() (ledger::_log_level >= ledger::LOG_ERROR)
+#define SHOW_FATAL() (ledger::_log_level >= ledger::LOG_FATAL)
 #define SHOW_CRITICAL() (ledger::_log_level >= ledger::LOG_CRIT)
 
-#define INFO(msg)      LOG_MACRO(ledger::LOG_INFO, msg)
-#define WARN(msg)      LOG_MACRO(ledger::LOG_WARN, msg)
-#define ERROR(msg)     LOG_MACRO(ledger::LOG_ERROR, msg)
-#define FATAL(msg)     LOG_MACRO(ledger::LOG_FATAL, msg)
-#define CRITICAL(msg)  LOG_MACRO(ledger::LOG_CRIT, msg)
+#define INFO(msg) LOG_MACRO(ledger::LOG_INFO, msg)
+#define WARN(msg) LOG_MACRO(ledger::LOG_WARN, msg)
+#define ERROR(msg) LOG_MACRO(ledger::LOG_ERROR, msg)
+#define FATAL(msg) LOG_MACRO(ledger::LOG_FATAL, msg)
+#define CRITICAL(msg) LOG_MACRO(ledger::LOG_CRIT, msg)
 #define EXCEPTION(msg) LOG_MACRO(ledger::LOG_EXCEPT, msg)
 
 } // namespace ledger
 
-#else // ! LOGGING_ON
-
-#define LOGGER(cat)
-
-#define SHOW_TRACE(lvl) false
-#define SHOW_DEBUG(cat) false
-#define SHOW_DEBUG_()   false
-#define SHOW_INFO()     false
-#define SHOW_WARN()     false
-#define SHOW_ERROR()    false
-#define SHOW_FATAL()    false
-#define SHOW_CRITICAL() false
-
-#define TRACE(lvl, msg)
-#define DEBUG(cat, msg)
-#define DEBUG_(msg)
-#define INFO(msg)
-#define WARN(msg)
-#define ERROR(msg)
-#define FATAL(msg)
-#define CRITICAL(msg)
-
-#endif // LOGGING_ON
-
 #define IF_TRACE(lvl) if (SHOW_TRACE(lvl))
 #define IF_DEBUG(cat) if (SHOW_DEBUG(cat))
-#define IF_DEBUG_()   if (SHOW_DEBUG_())
-#define IF_INFO()     if (SHOW_INFO())
-#define IF_WARN()     if (SHOW_WARN())
-#define IF_ERROR()    if (SHOW_ERROR())
-#define IF_FATAL()    if (SHOW_FATAL())
+#define IF_DEBUG_() if (SHOW_DEBUG_())
+#define IF_INFO() if (SHOW_INFO())
+#define IF_WARN() if (SHOW_WARN())
+#define IF_ERROR() if (SHOW_ERROR())
+#define IF_FATAL() if (SHOW_FATAL())
 #define IF_CRITICAL() if (SHOW_CRITICAL())
 
 /*@}*/
@@ -380,23 +327,24 @@ inline bool category_matches(const char * cat) {
  */
 /*@{*/
 
-#if LOGGING_ON && TIMERS_ON
+#if TIMERS_ON
 
 namespace ledger {
 
-void start_timer(const char * name, log_level_t lvl);
-void stop_timer(const char * name);
-void finish_timer(const char * name);
+void start_timer(const char* name, log_level_t lvl);
+void stop_timer(const char* name);
+void finish_timer(const char* name);
 
 #if TRACING_ON
-#define TRACE_START(name, lvl, msg) \
-  (SHOW_TRACE(lvl) ? \
-   ((ledger::_log_buffer << msg), \
-    ledger::start_timer(#name, ledger::LOG_TRACE)) : ((void)0))
-#define TRACE_STOP(name, lvl) \
-  (SHOW_TRACE(lvl) ? ledger::stop_timer(#name) : ((void)0))
-#define TRACE_FINISH(name, lvl) \
-  (SHOW_TRACE(lvl) ? ledger::finish_timer(#name) : ((void)0))
+#define TRACE_START(name, lvl, ...)                                                                \
+  do {                                                                                             \
+    if (SHOW_TRACE(lvl)) {                                                                         \
+      ledger::_log_buffer << __VA_ARGS__;                                                          \
+      ledger::start_timer(#name, ledger::LOG_TRACE);                                               \
+    }                                                                                              \
+  } while (false)
+#define TRACE_STOP(name, lvl) (SHOW_TRACE(lvl) ? ledger::stop_timer(#name) : ((void)0))
+#define TRACE_FINISH(name, lvl) (SHOW_TRACE(lvl) ? ledger::finish_timer(#name) : ((void)0))
 #else
 #define TRACE_START(name, lvl, msg)
 #define TRACE_STOP(name, lvl)
@@ -404,20 +352,18 @@ void finish_timer(const char * name);
 #endif
 
 #if DEBUG_ON
-#define DEBUG_START(name, cat, msg) \
-  (SHOW_DEBUG(cat) ? \
-   ((ledger::_log_buffer << msg), \
-    ledger::start_timer(#name, ledger::LOG_DEBUG)) : ((void)0))
-#define DEBUG_START_(name, msg) \
-  DEBUG_START_(name, _this_category, msg)
-#define DEBUG_STOP(name, cat) \
-  (SHOW_DEBUG(cat) ? ledger::stop_timer(#name) : ((void)0))
-#define DEBUG_STOP_(name) \
-  DEBUG_STOP_(name, _this_category)
-#define DEBUG_FINISH(name, cat) \
-  (SHOW_DEBUG(cat) ? ledger::finish_timer(#name) : ((void)0))
-#define DEBUG_FINISH_(name) \
-  DEBUG_FINISH_(name, _this_category)
+#define DEBUG_START(name, cat, ...)                                                                \
+  do {                                                                                             \
+    if (SHOW_DEBUG(cat)) {                                                                         \
+      ledger::_log_buffer << __VA_ARGS__;                                                          \
+      ledger::start_timer(#name, ledger::LOG_DEBUG);                                               \
+    }                                                                                              \
+  } while (false)
+#define DEBUG_START_(name, msg) DEBUG_START_(name, _this_category, msg)
+#define DEBUG_STOP(name, cat) (SHOW_DEBUG(cat) ? ledger::stop_timer(#name) : ((void)0))
+#define DEBUG_STOP_(name) DEBUG_STOP_(name, _this_category)
+#define DEBUG_FINISH(name, cat) (SHOW_DEBUG(cat) ? ledger::finish_timer(#name) : ((void)0))
+#define DEBUG_FINISH_(name) DEBUG_FINISH_(name, _this_category)
 #else
 #define DEBUG_START(name, cat, msg)
 #define DEBUG_START_(name, msg)
@@ -425,18 +371,19 @@ void finish_timer(const char * name);
 #define DEBUG_FINISH(name)
 #endif
 
-#define INFO_START(name, msg) \
-  (SHOW_INFO() ? \
-   ((ledger::_log_buffer << msg), \
-    ledger::start_timer(#name, ledger::LOG_INFO)) : ((void)0))
-#define INFO_STOP(name) \
-  (SHOW_INFO() ? stop_timer(#name) : ((void)0))
-#define INFO_FINISH(name) \
-  (SHOW_INFO() ? finish_timer(#name) : ((void)0))
+#define INFO_START(name, ...)                                                                      \
+  do {                                                                                             \
+    if (SHOW_INFO()) {                                                                             \
+      ledger::_log_buffer << __VA_ARGS__;                                                          \
+      ledger::start_timer(#name, ledger::LOG_INFO);                                                \
+    }                                                                                              \
+  } while (false)
+#define INFO_STOP(name) (SHOW_INFO() ? stop_timer(#name) : ((void)0))
+#define INFO_FINISH(name) (SHOW_INFO() ? finish_timer(#name) : ((void)0))
 
 } // namespace ledger
 
-#else // ! (LOGGING_ON && TIMERS_ON)
+#else // !TIMERS_ON
 
 #define TRACE_START(lvl, msg, name)
 #define TRACE_STOP(name, lvl)
@@ -461,11 +408,7 @@ void finish_timer(const char * name);
 
 #include "error.h"
 
-enum caught_signal_t {
-  NONE_CAUGHT,
-  INTERRUPTED,
-  PIPE_CLOSED
-};
+enum caught_signal_t : uint8_t { NONE_CAUGHT, INTERRUPTED, PIPE_CLOSED };
 
 extern caught_signal_t caught_signal;
 
@@ -488,30 +431,28 @@ inline void check_for_signal() {
  */
 /*@{*/
 
-#define foreach BOOST_FOREACH
 using std::unique_ptr;
 
 namespace ledger {
 
 template <typename T, typename U>
 inline T& downcast(U& object) {
-  return *polymorphic_downcast<T *>(&object);
+  return *polymorphic_downcast<T*>(&object);
 }
 
 path resolve_path(const path& pathname);
 
-inline const string& either_or(const string& first,
-                               const string& second) {
+inline const string& either_or(const string& first, const string& second) {
   return first.empty() ? second : first;
 }
 
-inline char * skip_ws(char * ptr) {
+inline char* skip_ws(char* ptr) {
   while (*ptr == ' ' || *ptr == '\t' || *ptr == '\n')
     ptr++;
   return ptr;
 }
 
-inline char * trim_ws(char * ptr) {
+inline char* trim_ws(char* ptr) {
   std::size_t len = std::strlen(ptr);
   int i = int(len) - 1;
   while (i >= 0 && (ptr[i] == ' ' || ptr[i] == '\t' || ptr[i] == '\n'))
@@ -519,123 +460,149 @@ inline char * trim_ws(char * ptr) {
   return skip_ws(ptr);
 }
 
-inline char * next_element(char * buf, bool variable = false) {
-  for (char * p = buf; *p; p++) {
-    if (! (*p == ' ' || *p == '\t'))
+inline char* next_element(char* buf, bool variable = false) {
+  for (char* p = buf; *p; p++) {
+    if (!(*p == ' ' || *p == '\t'))
       continue;
 
-    if (! variable) {
+    if (!variable) { // NOLINT(bugprone-branch-clone)
       *p = '\0';
       return skip_ws(p + 1);
-    }
-    else if (*p == '\t') {
+    } else if (*p == '\t') {
       *p = '\0';
       return skip_ws(p + 1);
-    }
-    else if (*(p + 1) == ' ') {
+    } else if (*(p + 1) == ' ') {
       *p = '\0';
       return skip_ws(p + 2);
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 inline int peek_next_nonws(std::istream& in) {
   int c = in.peek();
-  while (in.good() && ! in.eof() && std::isspace(c)) {
+  while (in.good() && !in.eof() && std::isspace(static_cast<unsigned char>(c))) {
     in.get();
     c = in.peek();
   }
   return c;
 }
 
-#define READ_INTO(str, targ, size, var, cond) {         \
-    char * _p = targ;                                   \
-    var = str.peek();                                   \
-    while (str.good() && ! str.eof() && var != '\n' &&  \
-           (cond) && _p - targ < size) {                \
-      var = str.get();                                  \
-      if (str.eof())                                    \
-        break;                                          \
-      if (var == '\\') {                                \
-        var = str.get();                                \
-        if (in.eof())                                   \
-          break;                                        \
-        switch (var) {                                  \
-        case 'b': var = '\b'; break;                    \
-        case 'f': var = '\f'; break;                    \
-        case 'n': var = '\n'; break;                    \
-        case 'r': var = '\r'; break;                    \
-        case 't': var = '\t'; break;                    \
-        case 'v': var = '\v'; break;                    \
-        default: break;                                 \
-        }                                               \
-      }                                                 \
-      *_p++ = var;                                      \
-      var = str.peek();                                 \
-    }                                                   \
-    *_p = '\0';                                         \
+#define READ_INTO(str, targ, size, var, cond)                                                      \
+  {                                                                                                \
+    char* _p = targ;                                                                               \
+    (var) = (str).peek();                                                                          \
+    while ((str).good() && !(str).eof() && (var) != '\n' && (cond) && _p - (targ) < (size)) {      \
+      (var) = (str).get();                                                                         \
+      if ((str).eof())                                                                             \
+        break;                                                                                     \
+      if ((var) == '\\') {                                                                         \
+        (var) = (str).get();                                                                       \
+        if (in.eof())                                                                              \
+          break;                                                                                   \
+        switch (var) {                                                                             \
+        case 'b':                                                                                  \
+          (var) = '\b';                                                                            \
+          break;                                                                                   \
+        case 'f':                                                                                  \
+          (var) = '\f';                                                                            \
+          break;                                                                                   \
+        case 'n':                                                                                  \
+          (var) = '\n';                                                                            \
+          break;                                                                                   \
+        case 'r':                                                                                  \
+          (var) = '\r';                                                                            \
+          break;                                                                                   \
+        case 't':                                                                                  \
+          (var) = '\t';                                                                            \
+          break;                                                                                   \
+        case 'v':                                                                                  \
+          (var) = '\v';                                                                            \
+          break;                                                                                   \
+        default:                                                                                   \
+          break;                                                                                   \
+        }                                                                                          \
+      }                                                                                            \
+      *_p++ = var;                                                                                 \
+      (var) = (str).peek();                                                                        \
+    }                                                                                              \
+    *_p = '\0';                                                                                    \
   }
 
-#define READ_INTO_(str, targ, size, var, idx, cond) {   \
-    char * _p = targ;                                   \
-    var = str.peek();                                   \
-    while (str.good() && ! str.eof() && var != '\n' &&  \
-           (cond) && _p - targ < size) {                \
-      var = str.get();                                  \
-      if (str.eof())                                    \
-        break;                                          \
-      idx++;                                            \
-      if (var == '\\') {                                \
-        var = str.get();                                \
-        if (in.eof())                                   \
-          break;                                        \
-        switch (var) {                                  \
-        case 'b': var = '\b'; break;                    \
-        case 'f': var = '\f'; break;                    \
-        case 'n': var = '\n'; break;                    \
-        case 'r': var = '\r'; break;                    \
-        case 't': var = '\t'; break;                    \
-        case 'v': var = '\v'; break;                    \
-        default: break;                                 \
-        }                                               \
-        idx++;                                          \
-      }                                                 \
-      *_p++ = var;                                      \
-      var = str.peek();                                 \
-    }                                                   \
-    *_p = '\0';                                         \
+#define READ_INTO_(str, targ, size, var, idx, cond)                                                \
+  {                                                                                                \
+    char* _p = targ;                                                                               \
+    (var) = (str).peek();                                                                          \
+    while ((str).good() && !(str).eof() && (var) != '\n' && (cond) && _p - (targ) < (size)) {      \
+      (var) = (str).get();                                                                         \
+      if ((str).eof())                                                                             \
+        break;                                                                                     \
+      (idx)++;                                                                                     \
+      if ((var) == '\\') {                                                                         \
+        (var) = (str).get();                                                                       \
+        if (in.eof())                                                                              \
+          break;                                                                                   \
+        switch (var) {                                                                             \
+        case 'b':                                                                                  \
+          (var) = '\b';                                                                            \
+          break;                                                                                   \
+        case 'f':                                                                                  \
+          (var) = '\f';                                                                            \
+          break;                                                                                   \
+        case 'n':                                                                                  \
+          (var) = '\n';                                                                            \
+          break;                                                                                   \
+        case 'r':                                                                                  \
+          (var) = '\r';                                                                            \
+          break;                                                                                   \
+        case 't':                                                                                  \
+          (var) = '\t';                                                                            \
+          break;                                                                                   \
+        case 'v':                                                                                  \
+          (var) = '\v';                                                                            \
+          break;                                                                                   \
+        default:                                                                                   \
+          break;                                                                                   \
+        }                                                                                          \
+        (idx)++;                                                                                   \
+      }                                                                                            \
+      *_p++ = var;                                                                                 \
+      (var) = (str).peek();                                                                        \
+    }                                                                                              \
+    *_p = '\0';                                                                                    \
   }
 
-inline string to_hex(unsigned int * message_digest, const int len = 1)
-{
+inline string digest_to_hex(const boost::uuids::detail::sha1::digest_type& message_digest,
+                            size_t len = sizeof(boost::uuids::detail::sha1::digest_type) * 2) {
   std::ostringstream buf;
+  buf.setf(std::ios_base::hex, std::ios_base::basefield);
+  buf.fill('0');
 
-  for(int i = 0; i < 5 ; i++) {
-    buf.width(8);
-    buf.fill('0');
-    buf << std::hex << message_digest[i];
-    if (i + 1 >= len)
-      break;                    // only output the first LEN dwords
+  // sha1::digest_type is an array type and may change between Boost versions
+  const size_t count = std::min(sizeof(message_digest) / sizeof(message_digest[0]),
+                                (len - 1) / (sizeof(message_digest[0]) * 2) + 1);
+  for (size_t i = 0; i < count; i++) {
+    buf.width(sizeof(message_digest[i]) * 2);
+    buf << (unsigned int)message_digest[i];
   }
-  return buf.str();
+  string hex = buf.str();
+  hex.resize(len, '0'); // in case a partial element is requested
+  return hex;
 }
 
-inline string sha1sum(const string& str)
-{
-	boost::uuids::detail::sha1 sha;
+inline string sha1sum(const string& str,
+                      size_t len = sizeof(boost::uuids::detail::sha1::digest_type) * 2) {
+  boost::uuids::detail::sha1 sha;
+  boost::uuids::detail::sha1::digest_type message_digest;
 
+  sha.reset();
   sha.process_bytes(str.c_str(), str.length());
-
-  unsigned int message_digest[5];
   sha.get_digest(message_digest);
-  return to_hex(message_digest, 5);
+  return digest_to_hex(message_digest, len);
 }
 
-extern const string version;
+enum hash_type_t : uint8_t { NO_HASHES = 0, HASH_SHA512 = 1, HASH_SHA512_Half = 2 };
 
 } // namespace ledger
 
 /*@}*/
-
-#endif // INCLUDED_UTILS_H

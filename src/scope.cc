@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -35,36 +35,30 @@
 
 namespace ledger {
 
-scope_t *       scope_t::default_scope = NULL;
-empty_scope_t * scope_t::empty_scope   = NULL;
+scope_t* scope_t::default_scope = nullptr;
+empty_scope_t* scope_t::empty_scope = nullptr;
 
-void symbol_scope_t::define(const symbol_t::kind_t kind,
-                            const string& name, expr_t::ptr_op_t def)
-{
-  DEBUG("scope.symbols",
-        "Defining '" << name << "' = " << def << " in " << this);
+void symbol_scope_t::define(const symbol_t::kind_t kind, const string& name,
+                            const expr_t::ptr_op_t& def) {
+  DEBUG("scope.symbols", "Defining '" << name << "' = " << def << " in " << this);
 
-  if (! symbols)
+  if (!symbols)
     symbols = symbol_map();
 
-  std::pair<symbol_map::iterator, bool> result
-    = symbols->insert(symbol_map::value_type(symbol_t(kind, name, def), def));
-  if (! result.second) {
-    symbol_map::iterator i = symbols->find(symbol_t(kind, name));
+  auto [iter, inserted] = symbols->insert(symbol_map::value_type(symbol_t(kind, name, def), def));
+  if (!inserted) {
+    auto i = symbols->find(symbol_t(kind, name));
     assert(i != symbols->end());
     symbols->erase(i);
 
-    result = symbols->insert(symbol_map::value_type
-                             (symbol_t(kind, name, def), def));
-    if (! result.second)
-      throw_(compile_error,
-             _f("Redefinition of '%1%' in the same scope") % name);
+    auto [iter2, inserted2] =
+        symbols->insert(symbol_map::value_type(symbol_t(kind, name, def), def));
+    if (!inserted2)
+      throw_(compile_error, _f("Redefinition of '%1%' in the same scope") % name);
   }
 }
 
-expr_t::ptr_op_t symbol_scope_t::lookup(const symbol_t::kind_t kind,
-                                        const string& name)
-{
+expr_t::ptr_op_t symbol_scope_t::lookup(const symbol_t::kind_t kind, const string& name) {
   if (symbols) {
     DEBUG("scope.symbols", "Looking for '" << name << "' in " << this);
     symbol_map::const_iterator i = symbols->find(symbol_t(kind, name));
@@ -76,10 +70,8 @@ expr_t::ptr_op_t symbol_scope_t::lookup(const symbol_t::kind_t kind,
   return child_scope_t::lookup(kind, name);
 }
 
-value_t& call_scope_t::resolve(const std::size_t index,
-                               value_t::type_t   context,
-                               const bool        required)
-{
+value_t& call_scope_t::resolve(const std::size_t index, value_t::type_t context,
+                               const bool required) {
   if (index >= args.size())
     throw_(calc_error, _("Too few arguments to function"));
 
@@ -87,9 +79,9 @@ value_t& call_scope_t::resolve(const std::size_t index,
   if (value.is_any()) {
     context_scope_t scope(*this, context, required);
     value = as_expr(value)->calc(scope, locus, depth);
-    if (required && ! value.is_type(context))
-      throw_(calc_error, _f("Expected %1% for argument %2%, but received %3%")
-             % value.label(context) % index % value.label());
+    if (required && !value.is_type(context))
+      throw_(calc_error, _f("Expected %1% for argument %2%, but received %3%") %
+                             value.label(context) % index % value.label());
   }
   return value;
 }

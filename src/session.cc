@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -40,8 +40,7 @@
 
 namespace ledger {
 
-void set_session_context(session_t * session)
-{
+void set_session_context(session_t* session) {
   if (session) {
     times_initialize();
     amount_t::initialize();
@@ -50,32 +49,28 @@ void set_session_context(session_t * session)
     amount_t::parse_conversion("1.00h", "60m");
 
     value_t::initialize();
-  }
-  else if (! session) {
+  } else if (!session) {
     value_t::shutdown();
     amount_t::shutdown();
     times_shutdown();
   }
 }
 
-session_t::session_t()
-  : flush_on_next_data_file(false), journal(new journal_t)
-{
- parsing_context.push();
+session_t::session_t() : flush_on_next_data_file(false), journal(new journal_t) {
+  parsing_context.push();
 
   TRACE_CTOR(session_t, "");
 }
 
-std::size_t session_t::read_data(const string& master_account)
-{
+std::size_t session_t::read_data(const string& master_account) {
   bool populated_data_files = false;
 
   if (HANDLER(file_).data_files.empty()) {
     path file;
-    if (const char * home_var = std::getenv("HOME"))
+    if (const char* home_var = std::getenv("HOME"))
       file = path(home_var) / ".ledger";
 
-    if (! file.empty() && exists(file))
+    if (!file.empty() && exists(file))
       HANDLER(file_).data_files.push_back(file);
     else
       throw_(parse_error, "No journal file was specified (please use -f)");
@@ -85,7 +80,7 @@ std::size_t session_t::read_data(const string& master_account)
 
   std::size_t xact_count = 0;
 
-  account_t * acct;
+  account_t* acct;
   if (master_account.empty())
     acct = journal->master;
   else
@@ -98,7 +93,7 @@ std::size_t session_t::read_data(const string& master_account)
       throw_(parse_error, _f("Could not find specified price-db file %1%") % price_db_path);
     }
   } else {
-    if (const char * home_var = std::getenv("HOME")) {
+    if (const char* home_var = std::getenv("HOME")) {
       price_db_path = (path(home_var) / ".pricedb");
     } else {
       price_db_path = ("./.ledgerrc");
@@ -114,8 +109,8 @@ std::size_t session_t::read_data(const string& master_account)
     journal->no_aliases = true;
 
   if (HANDLED(explicit)) {
-      // No-op
-    }
+    // No-op
+  }
   if (HANDLED(check_payees))
     journal->check_payees = true;
 
@@ -134,10 +129,9 @@ std::size_t session_t::read_data(const string& master_account)
       parsing_context.push(*price_db_path);
       parsing_context.get_current().journal = journal.get();
       try {
-        if (journal->read(parsing_context) > 0)
+        if (journal->read(parsing_context, HANDLER(hashes_).hash_type) > 0)
           throw_(parse_error, _("Transactions not allowed in price history file"));
-      }
-      catch (...) {
+      } catch (...) {
         parsing_context.pop();
         throw;
       }
@@ -145,14 +139,14 @@ std::size_t session_t::read_data(const string& master_account)
     }
   }
 
-  foreach (const path& pathname, HANDLER(file_).data_files) {
+  for (const path& pathname : HANDLER(file_).data_files) {
     if (pathname == "-" || pathname == "/dev/stdin") {
       // To avoid problems with stdin and pipes, etc., we read the entire
       // file in beforehand into a memory buffer, and then parcel it out
       // from there.
       std::ostringstream buffer;
 
-      while (std::cin.good() && ! std::cin.eof()) {
+      while (std::cin.good() && !std::cin.eof()) {
         char line[8192];
         std::cin.read(line, 8192);
         std::streamsize count = std::cin.gcount();
@@ -160,26 +154,25 @@ std::size_t session_t::read_data(const string& master_account)
       }
       buffer.flush();
 
-      shared_ptr<std::istream> stream(new std::istringstream(buffer.str()));
+      std::shared_ptr<std::istream> stream(new std::istringstream(buffer.str()));
       parsing_context.push(stream);
     } else {
       parsing_context.push(pathname);
     }
 
     parsing_context.get_current().journal = journal.get();
-    parsing_context.get_current().master  = acct;
+    parsing_context.get_current().master = acct;
     try {
-      xact_count += journal->read(parsing_context);
-    }
-    catch (...) {
+      xact_count += journal->read(parsing_context, HANDLER(hashes_).hash_type);
+    } catch (...) {
       parsing_context.pop();
       throw;
     }
     parsing_context.pop();
   }
 
-  DEBUG("ledger.read", "xact_count [" << xact_count
-        << "] == journal->xacts.size() [" << journal->xacts.size() << "]");
+  DEBUG("ledger.read", "xact_count [" << xact_count << "] == journal->xacts.size() ["
+                                      << journal->xacts.size() << "]");
   assert(xact_count == journal->xacts.size());
 
   if (populated_data_files)
@@ -190,8 +183,7 @@ std::size_t session_t::read_data(const string& master_account)
   return journal->xacts.size();
 }
 
-journal_t * session_t::read_journal_files()
-{
+journal_t* session_t::read_journal_files() {
   INFO_START(journal, "Read journal file");
 
   string master_account;
@@ -201,7 +193,7 @@ journal_t * session_t::read_journal_files()
 #if DEBUG_ON
   std::size_t count =
 #endif
-    read_data(master_account);
+      read_data(master_account);
 
   INFO_FINISH(journal);
 
@@ -212,27 +204,28 @@ journal_t * session_t::read_journal_files()
   return journal.get();
 }
 
-journal_t * session_t::read_journal(const path& pathname)
-{
+journal_t* session_t::read_journal(const path& pathname) {
+  journal.reset(new journal_t);
+
   HANDLER(file_).data_files.clear();
   HANDLER(file_).data_files.push_back(pathname);
 
   return read_journal_files();
 }
 
-journal_t * session_t::read_journal_from_string(const string& data)
-{
+journal_t* session_t::read_journal_from_string(const string& data) {
+  journal.reset(new journal_t);
+
   HANDLER(file_).data_files.clear();
 
-  shared_ptr<std::istream> stream(new std::istringstream(data));
+  std::shared_ptr<std::istream> stream(new std::istringstream(data));
   parsing_context.push(stream);
 
   parsing_context.get_current().journal = journal.get();
-  parsing_context.get_current().master  = journal->master;
+  parsing_context.get_current().master = journal->master;
   try {
-    journal->read(parsing_context);
-  }
-  catch (...) {
+    journal->read(parsing_context, HANDLER(hashes_).hash_type);
+  } catch (...) {
     parsing_context.pop();
     throw;
   }
@@ -241,66 +234,54 @@ journal_t * session_t::read_journal_from_string(const string& data)
   return journal.get();
 }
 
-void session_t::close_journal_files()
-{
-  journal.reset();
-  amount_t::shutdown();
-
+void session_t::close_journal_files() {
   journal.reset(new journal_t);
-  amount_t::initialize();
 }
 
-journal_t * session_t::get_journal()
-{
-    return journal.get();
+journal_t* session_t::get_journal() {
+  return journal.get();
 }
 
-value_t session_t::fn_account(call_scope_t& args)
-{
+value_t session_t::fn_account(call_scope_t& args) {
+  // NOLINTBEGIN(bugprone-branch-clone)
   if (args[0].is_string())
     return scope_value(journal->find_account(args.get<string>(0), false));
   else if (args[0].is_mask())
     return scope_value(journal->find_account_re(args.get<mask_t>(0).str()));
   else
     return NULL_VALUE;
+  // NOLINTEND(bugprone-branch-clone)
 }
 
-value_t session_t::fn_min(call_scope_t& args)
-{
+value_t session_t::fn_min(call_scope_t& args) {
   return args[1] < args[0] ? args[1] : args[0];
 }
-value_t session_t::fn_max(call_scope_t& args)
-{
+value_t session_t::fn_max(call_scope_t& args) {
   return args[1] > args[0] ? args[1] : args[0];
 }
 
-value_t session_t::fn_int(call_scope_t& args)
-{
+value_t session_t::fn_int(call_scope_t& args) {
   return args[0].to_long();
 }
-value_t session_t::fn_str(call_scope_t& args)
-{
+value_t session_t::fn_str(call_scope_t& args) {
   return string_value(args[0].to_string());
 }
 
-value_t session_t::fn_lot_price(call_scope_t& args)
-{
+value_t session_t::fn_lot_price(call_scope_t& args) {
   amount_t amt(args.get<amount_t>(0, false));
   if (amt.has_annotation() && amt.annotation().price)
     return *amt.annotation().price;
   else
     return NULL_VALUE;
 }
-value_t session_t::fn_lot_date(call_scope_t& args)
-{
+value_t session_t::fn_lot_date(call_scope_t& args) {
   amount_t amt(args.get<amount_t>(0, false));
   if (amt.has_annotation() && amt.annotation().date)
     return *amt.annotation().date;
   else
     return NULL_VALUE;
 }
-value_t session_t::fn_lot_tag(call_scope_t& args)
-{
+value_t session_t::fn_lot_tag(call_scope_t& args) {
   amount_t amt(args.get<amount_t>(0, false));
   if (amt.has_annotation() && amt.annotation().tag)
     return string_value(*amt.annotation().tag);
@@ -308,8 +289,8 @@ value_t session_t::fn_lot_tag(call_scope_t& args)
     return NULL_VALUE;
 }
 
-option_t<session_t> * session_t::lookup_option(const char * p)
-{
+option_t<session_t>* session_t::lookup_option(const char* p) {
+  // NOLINTBEGIN(bugprone-branch-clone)
   switch (*p) {
   case 'Q':
     OPT_CH(download); // -Q
@@ -330,6 +311,12 @@ option_t<session_t> * session_t::lookup_option(const char * p)
     break;
   case 'f':
     OPT_(file_); // -f
+    break;
+  case 'g':
+    OPT_(getquote_);
+    break;
+  case 'h':
+    OPT(hashes_);
     break;
   case 'i':
     OPT(input_date_format_);
@@ -360,17 +347,20 @@ option_t<session_t> * session_t::lookup_option(const char * p)
     break;
   case 'v':
     OPT(value_expr_);
+    break;
+  default:
+    break;
   }
-  return NULL;
+  // NOLINTEND(bugprone-branch-clone)
+  return nullptr;
 }
 
-expr_t::ptr_op_t session_t::lookup(const symbol_t::kind_t kind,
-                                   const string& name)
-{
-  const char * p = name.c_str();
+expr_t::ptr_op_t session_t::lookup(const symbol_t::kind_t kind, const string& name) {
+  const char* p = name.c_str();
 
   switch (kind) {
   case symbol_t::FUNCTION:
+    // NOLINTBEGIN(bugprone-branch-clone)
     switch (*p) {
     case 'a':
       if (is_eq(p, "account"))
@@ -406,13 +396,14 @@ expr_t::ptr_op_t session_t::lookup(const symbol_t::kind_t kind,
     default:
       break;
     }
+    // NOLINTEND(bugprone-branch-clone)
     // Check if they are trying to access an option's setting or value.
-    if (option_t<session_t> * handler = lookup_option(p))
+    if (option_t<session_t>* handler = lookup_option(p))
       return MAKE_OPT_FUNCTOR(session_t, handler);
     break;
 
   case symbol_t::OPTION:
-    if (option_t<session_t> * handler = lookup_option(p))
+    if (option_t<session_t>* handler = lookup_option(p))
       return MAKE_OPT_HANDLER(session_t, handler);
     break;
 

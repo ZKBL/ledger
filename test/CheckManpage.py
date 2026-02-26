@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function
+#!/usr/bin/env python3
 
 import sys
 import re
@@ -16,30 +13,16 @@ from CheckOptions import CheckOptions
 class CheckManpage (CheckOptions):
   def __init__(self, args):
     CheckOptions.__init__(self, args)
-    self.option_pattern = '\.It Fl \\\\-([-A-Za-z]+)'
-    self.function_pattern = '\.It Fn ([-A-Za-z_]+)'
+    self.option_pattern = r'^\.It Fl \\-([-A-Za-z]+)'
+    self.function_pattern = r'^\.It Fn ([-A-Za-z_]+)'
+    self.symbol_pattern = r'^\.It Sy ([-A-Za-z_]+)'
     self.source_file = join(self.source, 'doc', 'ledger.1')
     self.source_type = 'manpage'
 
 if __name__ == "__main__":
-  def getargs():
-    parser = argparse.ArgumentParser(prog='CheckManpage',
-            description='Check that ledger options are documented in the manpage')
-    parser.add_argument('-l', '--ledger',
-        dest='ledger',
-        type=str,
-        action='store',
-        required=True,
-        help='the path to the ledger executable to test with')
-    parser.add_argument('-s', '--source',
-        dest='source',
-        type=str,
-        action='store',
-        required=True,
-        help='the path to the top level ledger source directory')
-    return parser.parse_args()
-
-  args = getargs()
+  args = argparse.ArgumentParser(prog='CheckManpage',
+                                 description='Check that ledger options are documented in the manpage',
+                                 parents=[CheckManpage.parser()]).parse_args()
   script = CheckManpage(args)
   status = script.main()
   sys.exit(status)

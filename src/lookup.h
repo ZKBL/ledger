@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,19 +39,15 @@
  *
  * @ingroup data
  */
-#ifndef INCLUDED_LOOKUP_H
-#define INCLUDED_LOOKUP_H
+#pragma once
 
 #include "iterators.h"
 
 namespace ledger {
 
-std::pair<xact_t *, account_t *>
-lookup_probable_account(const string& ident,
-                        xacts_list::reverse_iterator iter,
-                        xacts_list::reverse_iterator end,
-                        account_t * ref_account = NULL);
+std::pair<xact_t*, account_t*> lookup_probable_account(const string& ident,
+                                                       xacts_list::reverse_iterator iter,
+                                                       const xacts_list::reverse_iterator& end,
+                                                       account_t* ref_account = nullptr);
 
 } // namespace ledger
-
-#endif // INCLUDED_LOOKUP_H

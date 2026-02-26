@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,7 @@
  *
  * @ingroup data
  */
-#ifndef INCLUDED_PRINT_H
-#define INCLUDED_PRINT_H
+#pragma once
 
 #include "chain.h"
 #include "predicate.h"
@@ -52,33 +51,30 @@ class xact_t;
 class post_t;
 class report_t;
 
-class print_xacts : public item_handler<post_t>
-{
+class print_xacts : public item_handler<post_t> {
 protected:
-  typedef std::list<xact_t *>      xacts_list;
-  typedef std::map<xact_t *, bool> xacts_present_map;
+  using xacts_list = std::list<xact_t*>;
+  using xacts_present_map = std::map<xact_t*, bool>;
 
-  report_t&         report;
+  report_t& report;
   xacts_present_map xacts_present;
-  xacts_list        xacts;
-  bool              print_raw;
-  bool              first_title;
+  xacts_list xacts;
+  bool print_raw;
+  bool first_title;
 
 public:
   print_xacts(report_t& _report, bool _print_raw = false)
-    : report(_report), print_raw(_print_raw), first_title(true) {
+      : report(_report), print_raw(_print_raw), first_title(true) {
     TRACE_CTOR(print_xacts, "report&, bool");
   }
-  virtual ~print_xacts() {
-    TRACE_DTOR(print_xacts);
-  }
+  ~print_xacts() override { TRACE_DTOR(print_xacts); }
 
-  virtual void title(const string&);
+  void title(const string&) override;
 
-  virtual void flush();
-  virtual void operator()(post_t& post);
+  void flush() override;
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
+  void clear() override {
     xacts_present.clear();
     xacts.clear();
 
@@ -87,5 +83,3 @@ public:
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_PRINT_H

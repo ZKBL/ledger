@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -38,125 +38,93 @@
 
 namespace ledger {
 
+using namespace python;
 using namespace boost::python;
 
 namespace {
 
-  long posts_len(xact_base_t& xact)
-  {
-    return static_cast<long>(xact.posts.size());
+long posts_len(xact_base_t& xact) {
+  return static_cast<long>(xact.posts.size());
+}
+
+post_t& posts_getitem(xact_base_t& xact, long i) {
+  long len = static_cast<long>(xact.posts.size());
+
+  if (labs(i) >= len) {
+    PyErr_SetString(PyExc_IndexError, _("Index out of range"));
+    throw_error_already_set();
   }
 
-  post_t& posts_getitem(xact_base_t& xact, long i)
-  {
-    static long last_index = 0;
-    static xact_base_t * last_xact = NULL;
-    static posts_list::iterator elem;
+  long x = i < 0 ? len + i : i;
+  auto elem = std::next(xact.posts.begin(), x);
+  return **elem;
+}
 
-    long len = static_cast<long>(xact.posts.size());
-
-    if (labs(i) >= len) {
-      PyErr_SetString(PyExc_IndexError, _("Index out of range"));
-      throw_error_already_set();
-    }
-
-    if (&xact == last_xact && i == last_index + 1) {
-      last_index = i;
-      return **++elem;
-    }
-
-    long x = i < 0 ? len + i : i;
-    elem = xact.posts.begin();
-    while (--x >= 0)
-      elem++;
-
-    last_xact = &xact;
-    last_index = i;
-
-    return **elem;
-  }
-
-  string py_xact_to_string(xact_t&)
-  {
-    // jww (2012-03-01): TODO
-    return empty_string;
-  }
+string py_xact_to_string(xact_t&) {
+  // jww (2012-03-01): TODO
+  return empty_string;
+}
 
 } // unnamed namespace
 
 using namespace boost::python;
 
-void export_xact()
-{
-  class_< xact_base_t, bases<item_t>, noncopyable > ("TransactionBase", no_init)
-    .add_property("journal",
-                  make_getter(&xact_base_t::journal,
-                              return_internal_reference<>()),
-                  make_setter(&xact_base_t::journal,
-                              with_custodian_and_ward<1, 2>()))
+void export_xact() {
+  class_<xact_base_t, bases<item_t>, noncopyable>("TransactionBase", no_init)
+      .add_property("journal", make_getter(&xact_base_t::journal, return_internal_reference<>()),
+                    make_setter(&xact_base_t::journal, with_custodian_and_ward<1, 2>()))
 
-    .def("__len__", posts_len)
-    .def("__getitem__", posts_getitem,
-         return_internal_reference<>())
+      .def("__len__", posts_len)
+      .def("__getitem__", posts_getitem, return_internal_reference<>())
 
-    .def("add_post", &xact_base_t::add_post, with_custodian_and_ward<1, 2>())
-    .def("remove_post", &xact_base_t::add_post)
+      .def("add_post", &xact_base_t::add_post, with_custodian_and_ward<1, 2>())
+      .def("remove_post", &xact_base_t::remove_post)
 
-    .def("finalize", &xact_base_t::finalize)
+      .def("finalize", &xact_base_t::finalize)
 
-    .def("__iter__", python::range<return_internal_reference<> >
-         (&xact_t::posts_begin, &xact_t::posts_end))
-    .def("posts", python::range<return_internal_reference<> >
-         (&xact_t::posts_begin, &xact_t::posts_end))
+      .def("__iter__", boost::python::range<return_internal_reference<>>(&xact_t::posts_begin,
+                                                                         &xact_t::posts_end))
+      .def("posts", boost::python::range<return_internal_reference<>>(&xact_t::posts_begin,
+                                                                      &xact_t::posts_end))
 
-    .def("valid", &xact_base_t::valid)
-    ;
+      .def("valid", &xact_base_t::valid);
 
-  class_< xact_t, bases<xact_base_t> > ("Transaction")
-    .def("id", &xact_t::id)
-    .def("seq", &xact_t::seq)
+  class_<xact_t, bases<xact_base_t>>("Transaction")
+      .def("id", &xact_t::id)
+      .def("seq", &xact_t::seq)
 
-    .def("__str__", py_xact_to_string)
+      .def("__str__", py_xact_to_string)
 
-    .add_property("code",
-                  make_getter(&xact_t::code, return_value_policy<return_by_value>()),
-                  make_setter(&xact_t::code, return_value_policy<return_by_value>()))
-    .add_property("payee",
-                  make_getter(&xact_t::payee),
-                  make_setter(&xact_t::payee))
+      .add_property("code", make_getter(&xact_t::code, return_value_policy<return_by_value>()),
+                    make_setter(&xact_t::code, return_value_policy<return_by_value>()))
+      .add_property("payee", make_getter(&xact_t::payee), make_setter(&xact_t::payee))
 
-    .def("add_post", &xact_t::add_post, with_custodian_and_ward<1, 2>())
+      .def("add_post", &xact_t::add_post, with_custodian_and_ward<1, 2>())
 
-    .def("magnitude", &xact_t::magnitude)
+      .def("magnitude", &xact_t::magnitude)
 
-    .def("lookup", &xact_t::lookup)
+      .def("lookup", &xact_t::lookup)
 
-    .def("has_xdata", &xact_t::has_xdata)
-    .def("clear_xdata", &xact_t::clear_xdata)
+      .def("has_xdata", &xact_t::has_xdata)
+      .def("clear_xdata", &xact_t::clear_xdata)
 
-    .def("valid", &xact_t::valid)
-    ;
+      .def("valid", &xact_t::valid);
 
-  class_< auto_xact_t, bases<xact_base_t> > ("AutomatedTransaction")
-    .def(init<predicate_t>())
+  class_<auto_xact_t, bases<xact_base_t>>("AutomatedTransaction")
+      .def(init<predicate_t>())
 
-    .add_property("predicate",
-                  make_getter(&auto_xact_t::predicate),
-                  make_setter(&auto_xact_t::predicate))
+      .add_property("predicate", make_getter(&auto_xact_t::predicate),
+                    make_setter(&auto_xact_t::predicate))
 
-    .def("extend_xact", &auto_xact_t::extend_xact)
-    ;
+      .def("extend_xact", &auto_xact_t::extend_xact);
 
-  class_< period_xact_t, bases<xact_base_t> > ("PeriodicTransaction")
-    .def(init<string>())
+  class_<period_xact_t, bases<xact_base_t>>("PeriodicTransaction")
+      .def(init<string>())
 
-    .add_property("period",
-                  make_getter(&period_xact_t::period),
-                  make_setter(&period_xact_t::period))
-    .add_property("period_string",
-                  make_getter(&period_xact_t::period_string),
-                  make_setter(&period_xact_t::period_string))
-    ;
+      .add_property("period", make_getter(&period_xact_t::period),
+                    make_setter(&period_xact_t::period))
+      .add_property("period_string", make_getter(&period_xact_t::period_string),
+                    make_setter(&period_xact_t::period_string));
 
   register_optional_to_python<std::string>();
 }

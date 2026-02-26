@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function
+#!/usr/bin/env python3
 
 import sys
 import re
@@ -16,11 +13,11 @@ from CheckOptions import CheckOptions
 class CheckTexinfo (CheckOptions):
   def __init__(self, args):
     CheckOptions.__init__(self, args)
-    self.option_pattern = '^@item\s+--([-A-Za-z]+)'
-    self.function_pattern = '^@defun\s+([-A-Za-z_]+)'
+    self.option_pattern = r'^@item\s+--([-A-Za-z]+)'
+    self.function_pattern = r'^@defun\s+([-A-Za-z_]+)'
+    self.symbol_pattern = r'^@defvar\s+([-A-Za-z_]+)'
     self.source_file = join(self.source, 'doc', 'ledger3.texi')
     self.source_type = 'texinfo'
-
 
   def find_functions(self, filename):
     functions = set()
@@ -30,11 +27,13 @@ class CheckTexinfo (CheckOptions):
     function = None
     fun_doc = str()
     fun_example = False
+    fun_undocumented = False
     item_regex = re.compile(self.function_pattern)
-    itemx_regex = re.compile('^@defunx')
-    example_regex = re.compile('^@smallexample\s+@c\s+command:')
-    fix_regex = re.compile('FIX')
-    comment_regex = re.compile('^\s*@c')
+    itemx_regex = re.compile(r'^@def(un|var)x')
+    example_regex = re.compile(r'^@smallexample\s+@c\s+command:')
+    fix_regex = re.compile(r'FIX')
+    undocumented_regex = re.compile(r'@value{FIXME:UNDOCUMENTED}')
+    comment_regex = re.compile(r'^\s*@c')
     for line in open(filename):
         line = line.strip()
         if state == state_normal:
@@ -44,13 +43,18 @@ class CheckTexinfo (CheckOptions):
                 function = match.group(1)
         elif state == state_function:
             if line == '@end defun':
-                if function and fun_example and len(fun_doc) and not fix_regex.search(fun_doc):
+                # FIXME: Do not require an example (fun_example) for now
+                if function and len(fun_doc) \
+                    and not fix_regex.search(fun_doc) \
+                    and not undocumented_regex.search(fun_doc):
                     functions.add(function)
                 state = state_normal
-                fun_example = None
+                fun_example = False
                 fun_doc = str()
             elif itemx_regex.match(line):
                 continue
+            elif undocumented_regex.match(line):
+                fun_undocumented = True
             elif example_regex.match(line):
                 fun_example = True
             elif not comment_regex.match(line):
@@ -65,9 +69,9 @@ class CheckTexinfo (CheckOptions):
     option = None
     opt_doc = str()
     item_regex = re.compile(self.option_pattern)
-    itemx_regex = re.compile('^@itemx')
-    fix_regex = re.compile('FIX')
-    comment_regex = re.compile('^\s*@c')
+    itemx_regex = re.compile(r'^@itemx')
+    fix_regex = re.compile(r'FIX')
+    comment_regex = re.compile(r'^\s*@c')
     for line in open(filename):
       line = line.strip()
       if state == state_normal:
@@ -93,24 +97,9 @@ class CheckTexinfo (CheckOptions):
     return options
 
 if __name__ == "__main__":
-  def getargs():
-    parser = argparse.ArgumentParser(prog='CheckTexinfo',
-            description='Check that ledger options are documented in the texinfo manual')
-    parser.add_argument('-l', '--ledger',
-        dest='ledger',
-        type=str,
-        action='store',
-        required=True,
-        help='the path to the ledger executable to test with')
-    parser.add_argument('-s', '--source',
-        dest='source',
-        type=str,
-        action='store',
-        required=True,
-        help='the path to the top level ledger source directory')
-    return parser.parse_args()
-
-  args = getargs()
+  args = argparse.ArgumentParser(prog='CheckTexinfo',
+                                 description='Check that ledger options are documented in the texinfo manual',
+                                 parents=[CheckTexinfo.parser()]).parse_args()
   script = CheckTexinfo(args)
   status = script.main()
   sys.exit(status)

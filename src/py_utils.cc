@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -33,18 +33,15 @@
 
 #include "pyinterp.h"
 #include "pyutils.h"
-#if PY_MAJOR_VERSION < 3
-#include "pyfstream.h"
-#endif
 
 namespace ledger {
 
+using namespace flags;
+using namespace python;
 using namespace boost::python;
 
-struct bool_to_python
-{
-  static PyObject * convert(const bool truth)
-  {
+struct bool_to_python {
+  static PyObject* convert(const bool truth) {
     if (truth)
       Py_RETURN_TRUE;
     else
@@ -52,19 +49,15 @@ struct bool_to_python
   }
 };
 
-struct bool_from_python
-{
-  static void* convertible(PyObject* obj_ptr)
-  {
-    if (!PyBool_Check(obj_ptr)) return 0;
+struct bool_from_python {
+  static void* convertible(PyObject* obj_ptr) {
+    if (!PyBool_Check(obj_ptr))
+      return nullptr;
     return obj_ptr;
   }
 
-  static void construct(PyObject* obj_ptr,
-                        converter::rvalue_from_python_stage1_data* data)
-  {
-    void * storage =
-      ((converter::rvalue_from_python_storage<bool>*) data)->storage.bytes;
+  static void construct(PyObject* obj_ptr, converter::rvalue_from_python_stage1_data* data) {
+    void* storage = ((converter::rvalue_from_python_storage<bool>*)data)->storage.bytes;
     if (obj_ptr == Py_True)
       new (storage) bool(true);
     else
@@ -73,166 +66,108 @@ struct bool_from_python
   }
 };
 
-typedef register_python_conversion<bool, bool_to_python, bool_from_python>
-  bool_python_conversion;
+using bool_python_conversion = register_python_conversion<bool, bool_to_python, bool_from_python>;
 
-
-struct string_to_python
-{
-  static PyObject* convert(const string& str)
-  {
+struct string_to_python {
+  static PyObject* convert(const string& str) {
     // Return bytes, not characters; see __unicode__ methods for that
     return incref(object(static_cast<const std::string&>(str)).ptr());
   }
 };
 
-struct string_from_python
-{
-  static void* convertible(PyObject* obj_ptr)
-  {
-    if (!PyUnicode_Check(obj_ptr)
-#if PY_MAJOR_VERSION < 3
-        && !PyString_Check(obj_ptr)
+static void fill_utf8_string(string& result, PyObject* obj_ptr) {
+  Py_ssize_t size;
+#if PY_MINOR_VERSION >= 3
+  size = PyUnicode_GET_LENGTH(obj_ptr);
+  switch (PyUnicode_KIND(obj_ptr)) {
+  case PyUnicode_1BYTE_KIND: {
+    Py_UCS1* value = PyUnicode_1BYTE_DATA(obj_ptr);
+    if (value == 0)
+      throw_error_already_set();
+    utf8::utf16to8(value, value + size, std::back_inserter(result));
+  } break;
+#if PY_MINOR_VERSION < 12 && Py_UNICODE_SIZE == 2
+  case PyUnicode_WCHAR_KIND:
 #endif
-            ) return 0;
-    return obj_ptr;
+  case PyUnicode_2BYTE_KIND: {
+    Py_UCS2* value = PyUnicode_2BYTE_DATA(obj_ptr);
+    if (value == 0)
+      throw_error_already_set();
+    utf8::utf16to8(value, value + size, std::back_inserter(result));
+  } break;
+#if PY_MINOR_VERSION < 12 && Py_UNICODE_SIZE == 4
+  case PyUnicode_WCHAR_KIND:
+#endif
+  case PyUnicode_4BYTE_KIND: {
+    Py_UCS4* value = PyUnicode_4BYTE_DATA(obj_ptr);
+    if (value == 0)
+      throw_error_already_set();
+    utf8::utf32to8(value, value + size, std::back_inserter(result));
+  } break;
+  default:
+    assert("PyUnicode_KIND returned an unexpected kind" == NULL);
   }
-
-  static void construct(PyObject* obj_ptr,
-                        converter::rvalue_from_python_stage1_data* data)
-  {
-#if PY_MAJOR_VERSION < 3
-    if (PyString_Check(obj_ptr)) {
-      const char* value = PyString_AsString(obj_ptr);
-      if (value == 0) throw_error_already_set();
-      void* storage =
-        reinterpret_cast<converter::rvalue_from_python_storage<string> *>
-                        (data)->storage.bytes;
-      new (storage) string(value);
-      data->convertible = storage;
-    } else {
-#endif
-      VERIFY(PyUnicode_Check(obj_ptr));
-
-      Py_ssize_t size = PyUnicode_GET_SIZE(obj_ptr);
-      const Py_UNICODE* value = PyUnicode_AS_UNICODE(obj_ptr);
-
-      string str;
-#if Py_UNICODE_SIZE == 2 // UTF-16
-        utf8::unchecked::utf16to8(value, value + size, std::back_inserter(str));
+#else                      // PY_MINOR_VERSION >= 3
+  size = PyUnicode_GET_SIZE(obj_ptr);
+  const Py_UNICODE* value = PyUnicode_AS_UNICODE(obj_ptr);
+#if Py_UNICODE_SIZE == 2   // UTF-16
+  utf8::utf16to8(value, value + size, std::back_inserter(result));
 #elif Py_UNICODE_SIZE == 4 // UTF-32
-        utf8::unchecked::utf32to8(value, value + size, std::back_inserter(str));
+  utf8::utf32to8(value, value + size, std::back_inserter(result));
 #else
-        assert("Py_UNICODE has an unexpected size" == NULL);
+  assert("Py_UNICODE has an unexpected size" == nullptr);
 #endif
+#endif // PY_MINOR_VERSION >= 3
+}
 
-      if (value == 0) throw_error_already_set();
-      void* storage =
-        reinterpret_cast<converter::rvalue_from_python_storage<string> *>
-                        (data)->storage.bytes;
-      new (storage) string(str);
-      data->convertible = storage;
-#if PY_MAJOR_VERSION < 3
-    }
-#endif
-  }
-};
-
-typedef register_python_conversion<string, string_to_python, string_from_python>
-  string_python_conversion;
-
-#if PY_MAJOR_VERSION < 3
-struct istream_to_python
-{
-  static PyObject* convert(const std::istream&)
-  {
-    return incref(boost::python::detail::none());
-  }
-};
-
-struct istream_from_python
-{
-  static void* convertible(PyObject* obj_ptr)
-  {
-    if (!PyFile_Check(obj_ptr)) return 0;
+struct string_from_python {
+  static void* convertible(PyObject* obj_ptr) {
+    if (!PyUnicode_Check(obj_ptr))
+      return nullptr;
     return obj_ptr;
   }
 
-  static void construct(PyObject* obj_ptr,
-                        converter::rvalue_from_python_stage1_data* data)
-  {
+  static void construct(PyObject* obj_ptr, converter::rvalue_from_python_stage1_data* data) {
+    VERIFY(PyUnicode_Check(obj_ptr));
+
+#if PY_MINOR_VERSION < 12
+    if (PyUnicode_READY(obj_ptr))
+      return;
+#endif
+
     void* storage =
-      reinterpret_cast<converter::rvalue_from_python_storage<pyifstream> *>
-                      (data)->storage.bytes;
-    new (storage) pyifstream(reinterpret_cast<PyFileObject *>(obj_ptr));
+        reinterpret_cast<converter::rvalue_from_python_storage<string>*>(data)->storage.bytes;
+    string* str_ptr = new (storage) string();
+    fill_utf8_string(*str_ptr, obj_ptr);
     data->convertible = storage;
   }
 };
 
-typedef register_python_conversion<std::istream,
-                                   istream_to_python, istream_from_python>
-  istream_python_conversion;
+using string_python_conversion =
+    register_python_conversion<string, string_to_python, string_from_python>;
 
+void export_utils() {
+  class_<supports_flags<uint_least8_t>>("SupportFlags8")
+      .def(init<supports_flags<uint_least8_t>>())
+      .def(init<uint_least8_t>())
 
-struct ostream_to_python
-{
-  static PyObject* convert(const std::ostream&)
-  {
-    return incref(boost::python::detail::none());
-  }
-};
+      .add_property("flags", &supports_flags<uint_least8_t>::flags,
+                    &supports_flags<uint_least8_t>::set_flags)
+      .def("has_flags", &supports_flags<uint_least8_t>::has_flags)
+      .def("clear_flags", &supports_flags<uint_least8_t>::clear_flags)
+      .def("add_flags", &supports_flags<uint_least8_t>::add_flags)
+      .def("drop_flags", &supports_flags<uint_least8_t>::drop_flags);
 
-struct ostream_from_python
-{
-  static void* convertible(PyObject* obj_ptr)
-  {
-    if (!PyFile_Check(obj_ptr)) return 0;
-    return obj_ptr;
-  }
+  class_<supports_flags<uint_least16_t>>("SupportFlags16")
+      .def(init<supports_flags<uint_least16_t>>())
+      .def(init<uint_least16_t>())
 
-  static void construct(PyObject* obj_ptr,
-                        converter::rvalue_from_python_stage1_data* data)
-  {
-    void* storage =
-      reinterpret_cast<converter::rvalue_from_python_storage<pyofstream> *>
-                      (data)->storage.bytes;
-    new (storage) pyofstream(reinterpret_cast<PyFileObject *>(obj_ptr));
-    data->convertible = storage;
-  }
-};
-
-typedef register_python_conversion<std::ostream,
-                                   ostream_to_python, ostream_from_python>
-  ostream_python_conversion;
-#endif
-
-void export_utils()
-{
-  class_< supports_flags<uint_least8_t> > ("SupportFlags8")
-    .def(init<supports_flags<uint_least8_t> >())
-    .def(init<uint_least8_t>())
-
-    .add_property("flags",
-                  &supports_flags<uint_least8_t>::flags,
-                  &supports_flags<uint_least8_t>::set_flags)
-    .def("has_flags", &supports_flags<uint_least8_t>::has_flags)
-    .def("clear_flags", &supports_flags<uint_least8_t>::clear_flags)
-    .def("add_flags", &supports_flags<uint_least8_t>::add_flags)
-    .def("drop_flags", &supports_flags<uint_least8_t>::drop_flags)
-    ;
-
-  class_< supports_flags<uint_least16_t> > ("SupportFlags16")
-    .def(init<supports_flags<uint_least16_t> >())
-    .def(init<uint_least16_t>())
-
-    .add_property("flags",
-                  &supports_flags<uint_least16_t>::flags,
-                  &supports_flags<uint_least16_t>::set_flags)
-    .def("has_flags", &supports_flags<uint_least16_t>::has_flags)
-    .def("clear_flags", &supports_flags<uint_least16_t>::clear_flags)
-    .def("add_flags", &supports_flags<uint_least16_t>::add_flags)
-    .def("drop_flags", &supports_flags<uint_least16_t>::drop_flags)
-    ;
+      .add_property("flags", &supports_flags<uint_least16_t>::flags,
+                    &supports_flags<uint_least16_t>::set_flags)
+      .def("has_flags", &supports_flags<uint_least16_t>::has_flags)
+      .def("clear_flags", &supports_flags<uint_least16_t>::clear_flags)
+      .def("add_flags", &supports_flags<uint_least16_t>::add_flags)
+      .def("drop_flags", &supports_flags<uint_least16_t>::drop_flags);
 
 #if 0
   class_< basic_flags_t<uint_least8_t>,
@@ -244,23 +179,16 @@ void export_utils()
     ;
 #endif
 
-  class_< delegates_flags<uint_least16_t>,
-          boost::noncopyable > ("DelegatesFlags16", no_init)
-    .add_property("flags",
-                  &delegates_flags<uint_least16_t>::flags,
-                  &delegates_flags<uint_least16_t>::set_flags)
-    .def("has_flags", &delegates_flags<uint_least16_t>::has_flags)
-    .def("clear_flags", &delegates_flags<uint_least16_t>::clear_flags)
-    .def("add_flags", &delegates_flags<uint_least16_t>::add_flags)
-    .def("drop_flags", &delegates_flags<uint_least16_t>::drop_flags)
-    ;
+  class_<delegates_flags<uint_least16_t>, boost::noncopyable>("DelegatesFlags16", no_init)
+      .add_property("flags", &delegates_flags<uint_least16_t>::flags,
+                    &delegates_flags<uint_least16_t>::set_flags)
+      .def("has_flags", &delegates_flags<uint_least16_t>::has_flags)
+      .def("clear_flags", &delegates_flags<uint_least16_t>::clear_flags)
+      .def("add_flags", &delegates_flags<uint_least16_t>::add_flags)
+      .def("drop_flags", &delegates_flags<uint_least16_t>::drop_flags);
 
   bool_python_conversion();
   string_python_conversion();
-#if PY_MAJOR_VERSION < 3
-  istream_python_conversion();
-  ostream_python_conversion();
-#endif
 }
 
 } // namespace ledger

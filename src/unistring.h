@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -30,7 +30,7 @@
  */
 
 /**
- * @addtogroup utils
+ * @addtogroup util
  */
 
 /**
@@ -39,8 +39,7 @@
  *
  * @ingroup utils
  */
-#ifndef INCLUDED_UNISTRING_H
-#define INCLUDED_UNISTRING_H
+#pragma once
 
 namespace ledger {
 
@@ -54,73 +53,64 @@ int mk_wcwidth(boost::uint32_t ucs);
  * The input to the string is a UTF8 encoded ledger::string, which can
  * then have its true length be taken, or characters extracted.
  */
-class unistring
-{
+class unistring {
 public:
-  static const std::size_t npos = static_cast<std::size_t>(-1);
+  inline static constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
   std::vector<boost::uint32_t> utf32chars;
 
-  unistring() {
-    TRACE_CTOR(unistring, "");
-  }
-  unistring(const std::string& input)
-  {
-    const char * p   = input.c_str();
-    std::size_t  len = input.length();
+  unistring() { TRACE_CTOR(unistring, ""); }
+  unistring(const std::string& input) {
+    const char* p = input.c_str();
+    std::size_t len = input.length();
 
-    assert(len < 1024);
-    VERIFY(utf8::is_valid(p, p + len));
-    utf8::unchecked::utf8to32(p, p + len, std::back_inserter(utf32chars));
+    if (len >= 4096)
+      throw_(std::length_error, _f("String too long for unistring: %1% bytes") % len);
+    if (!utf8::is_valid(p, p + len))
+      throw_(std::runtime_error, _("Invalid UTF-8 sequence in string"));
+    utf8::utf8to32(p, p + len, std::back_inserter(utf32chars));
 
     TRACE_CTOR(unistring, "std::string");
   }
-  ~unistring() {
-    TRACE_DTOR(unistring);
-  }
+  ~unistring() { TRACE_DTOR(unistring); }
 
-  std::size_t length() const {
-    return utf32chars.size();
-  }
+  std::size_t length() const { return utf32chars.size(); }
 
   std::size_t width() const {
     std::size_t width = 0;
-    foreach (const boost::uint32_t& ch, utf32chars) {
+    for (const boost::uint32_t& ch : utf32chars) {
       width += mk_wcwidth(ch);
     }
     return width;
   }
 
   std::string extract(const std::string::size_type begin = 0,
-                      const std::string::size_type len   = 0) const
-  {
-    std::string            utf8result;
+                      const std::string::size_type len = 0) const {
+    std::string utf8result; // NOLINT(bugprone-unused-local-non-trivial-variable)
     std::string::size_type this_len = length();
 
     assert(begin <= this_len);
     assert(begin + len <= this_len);
 
-    if (this_len)
-      utf8::unchecked::utf32to8
-        (utf32chars.begin() + static_cast<std::string::difference_type>(begin),
-         utf32chars.begin() + static_cast<std::string::difference_type>(begin) +
-         static_cast<std::string::difference_type>
-         (len ? (len > this_len ? this_len : len) : this_len),
-         std::back_inserter(utf8result));
+    if (this_len) {
+      std::size_t end_idx =
+          (len == 0) ? utf32chars.size() : std::min(begin + len, utf32chars.size());
+      utf8::utf32to8(utf32chars.begin() + static_cast<std::string::difference_type>(begin),
+                     utf32chars.begin() + static_cast<std::string::difference_type>(end_idx),
+                     std::back_inserter(utf8result));
+    }
 
     return utf8result;
   }
 
-  std::string extract_by_width(std::string::size_type begin,
-                               std::size_t            len) const
-  {
+  std::string extract_by_width(std::string::size_type begin, std::size_t len) const {
     std::string utf8result;
     std::size_t this_width = width();
     std::string::size_type this_len = length();
 
     assert(begin <= this_width);
     if (begin + len > this_width)
-	len = this_width - begin;
+      len = this_width - begin;
 
     std::size_t pos = 0;
     std::size_t begin_idx = 0, end_idx = 0;
@@ -149,44 +139,37 @@ public:
     utf8result += std::string(head, '.');
 
     if (begin_idx < end_idx)
-      utf8::unchecked::utf32to8
-        (utf32chars.begin() + static_cast<std::string::difference_type>(begin_idx),
-         utf32chars.begin() + static_cast<std::string::difference_type>(end_idx),
-         std::back_inserter(utf8result));
+      utf8::utf32to8(utf32chars.begin() + static_cast<std::string::difference_type>(begin_idx),
+                     utf32chars.begin() + static_cast<std::string::difference_type>(end_idx),
+                     std::back_inserter(utf8result));
 
     utf8result += std::string(tail, '.');
 
     return utf8result;
   }
 
-  std::size_t find(const boost::uint32_t __s, std::size_t __pos = 0) const {
+  std::size_t find(const boost::uint32_t _s, std::size_t _pos = 0) const {
     std::size_t idx = 0;
-    foreach (const boost::uint32_t& ch, utf32chars) {
-      if (idx >= __pos && ch == __s)
+    for (const boost::uint32_t& ch : utf32chars) {
+      if (idx >= _pos && ch == _s)
         return idx;
       idx++;
     }
     return npos;
   }
 
-  boost::uint32_t& operator[](const std::size_t index) {
-    return utf32chars[index];
-  }
-  const boost::uint32_t& operator[](const std::size_t index) const {
-    return utf32chars[index];
-  }
+  boost::uint32_t& operator[](const std::size_t index) { return utf32chars[index]; }
+  const boost::uint32_t& operator[](const std::size_t index) const { return utf32chars[index]; }
 };
 
-inline void justify(std::ostream&      out,
-                    const std::string& str,
-                    int                width,
-                    bool               right  = false,
-                    bool               redden = false)
-{
-  if (! right) {
-    if (redden) out << "\033[31m";
+inline void justify(std::ostream& out, const std::string& str, int width, bool right = false,
+                    bool redden = false) {
+  if (!right) {
+    if (redden)
+      out << "\033[31m";
     out << str;
-    if (redden) out << "\033[0m";
+    if (redden)
+      out << "\033[0m";
   }
 
   unistring temp(str);
@@ -196,12 +179,12 @@ inline void justify(std::ostream&      out,
     out << ' ';
 
   if (right) {
-    if (redden) out << "\033[31m";
+    if (redden)
+      out << "\033[31m";
     out << str;
-    if (redden) out << "\033[0m";
+    if (redden)
+      out << "\033[0m";
   }
 }
 
 } // namespace ledger
-
-#endif // INCLUDED_UNISTRING_H

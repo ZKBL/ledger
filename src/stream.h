@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -45,8 +45,7 @@
  * child process, different cleanup is needed for each scenario.  This
  * file abstracts those various needs.
  */
-#ifndef INCLUDED_STREAM_H
-#define INCLUDED_STREAM_H
+#pragma once
 
 #include "utils.h"
 
@@ -63,24 +62,31 @@ namespace ledger {
  * Cline's "C++ FAQ Lite". Arguably this should be three different
  * classes, but that introduces additional unneeded complications.
  */
-class output_stream_t
-{
+class output_stream_t {
   output_stream_t& operator=(const output_stream_t&);
 
 private:
   int pipe_to_pager_fd;
+#if !defined(_WIN32) && !defined(__CYGWIN__)
+  pid_t pager_pid;
+#endif
 
 public:
   /**
    * A pointer to the ostream.  Don't delete this; the output_stream_t
    * class takes care of this.
    */
-  std::ostream * os;
+  std::ostream* os;
 
   /**
    * Construct a new output_stream_t.
    */
-  output_stream_t() : pipe_to_pager_fd(-1), os(&std::cout) {
+  output_stream_t()
+      : pipe_to_pager_fd(-1),
+#if !defined(_WIN32) && !defined(__CYGWIN__)
+        pager_pid(-1),
+#endif
+        os(&std::cout) {
     TRACE_CTOR(output_stream_t, "");
   }
 
@@ -90,7 +96,11 @@ public:
    * worrying about pointer copying within output_stream_t.
    */
   output_stream_t(const output_stream_t&)
-    : pipe_to_pager_fd(-1), os(&std::cout) {
+      : pipe_to_pager_fd(-1),
+#if !defined(_WIN32) && !defined(__CYGWIN__)
+        pager_pid(-1),
+#endif
+        os(&std::cout) {
     TRACE_CTOR(output_stream_t, "copy");
   }
 
@@ -101,7 +111,11 @@ public:
    */
   ~output_stream_t() {
     TRACE_DTOR(output_stream_t);
-    close();
+    try {
+      close();
+    } catch (...) { // NOLINT(bugprone-empty-catch)
+      // Destructors must not throw; swallow any exception from close()
+    }
   }
 
   /**
@@ -114,22 +128,18 @@ public:
    * empty.
    */
   void initialize(const optional<path>& output_file = none,
-                  const optional<path>& pager_path  = none);
+                  const optional<path>& pager_path = none);
 
   /**
-   * Convertor to a standard ostream.  This is used so that we can
+   * Converter to a standard ostream.  This is used so that we can
    * stream directly to an object of type output_stream_t.
    */
-  operator std::ostream&() {
-    return *os;
-  }
+  operator std::ostream&() { return *os; }
 
   /**
    * Flushing function.  A simple proxy for ostream's flush.
    */
-  void flush() {
-    os->flush();
-  }
+  void flush() { os->flush(); }
 
   /**
    * Close the output stream, waiting on the pager process if necessary.
@@ -138,5 +148,3 @@ public:
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_STREAM_H

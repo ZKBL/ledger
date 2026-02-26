@@ -1,4 +1,4 @@
-.Dd March 15, 2019
+.Dd August 21, 2025
 .Dt LEDGER 1
 .Os
 .Sh NAME
@@ -138,7 +138,7 @@ The prices are reported with the granularity of a single day.
 Report prices for all commodities in postings matching the
 .Ar report-query .
 Prices are reported down to the second, using the same format as the
-.Pa ~/.pricedb
+.Pa \[ti]/.pricedb
 file.
 .It Ic print Oo Ar report-query Oc
 Print out the full transactions of any matching postings using the same
@@ -172,11 +172,14 @@ with this command are:
 Show the running average, rather than a running total.
 .It Fl \-current Pq Fl c
 Don't show postings beyond the present day.
-.It Fl \-exchange Ar commodity Pq Fl X
+.It Fl \-exchange Qo Ar COMMODITY Oo , Ar COMMODITY, ... Oc Qc Pq Fl X
 Render all values in the given
 .Ar commodity ,
-if a price conversion rate can be determined.  Rates are always displayed
-relative to the date of the posting they are calculated for.  This means a
+if a price conversion rate can be determined.  If multiple commodities are
+given, values in a listed commodity will remain as-is, and others will be
+displayed in the first listed commodity they can be converted to.  Rates are
+always displayed relative to the date of the posting they are calculated for.
+This means a
 .Ic register
 report is a historical value report.  For current values, it may be preferable
 to use the
@@ -184,6 +187,22 @@ to use the
 report.
 .It Fl \-gain Pq Fl G
 Show any gains (or losses) in commodity values over time.
+.It Fl \-gain-since Ar DATE
+When used with
+.Fl \-gain ,
+compute unrealised gain relative to the market value at
+.Ar DATE
+rather than each lot's original cost basis.
+This is useful for analysing performance within a specific period: lots held
+before
+.Ar DATE
+are treated as if they were acquired at their market value on that date, so
+only appreciation since
+.Ar DATE
+is reported.
+Lots acquired on or after
+.Ar DATE
+still use their original cost.
 .It Fl \-head Ar number
 Only show the top
 .Ar number
@@ -211,10 +230,10 @@ Sort postings by evaluating the given
 Note that a comma-separated list of expressions is allowed, in which case each
 sorting term is used in order to determine the final ordering.  For example,
 to search by date and then amount, one would use:
-.Dl ledger reg --sort 'date, amount'
+.Dl ledger reg --sort \[aq]date, amount\[aq]
 The sort order may be controlled with the '-' sign. For example, to sort in
 reverse chronological order:
-.Dl ledger reg --sort '-date'
+.Dl ledger reg --sort \[aq]-date\[aq]
 .It Fl \-tail Ar number
 Only show the last
 .Ar number
@@ -254,17 +273,11 @@ The synonyms
 and
 .Ic r
 are also accepted.
-.It Ic server
-This command requires that Python support be active.  If so, it starts up an
-.Tn HTTP
-server listening for requests on port 9000.  This provides an alternate
-interface to creating and viewing reports.  Note that this is very much a
-work-in-progress, and will not be fully functional until a later version.
 .It Ic select Oo Ar sql-query Oc
 List all postings matching the
 .Ar sql-query .
 This command allows to generate SQL-like queries, e.g.:
-.Dl Li ledger select date,amount from posts where account=~/Income/
+.Dl Li ledger select date,amount from posts where account=\[ti]/Income/
 .It Ic source
 Parse a journal file and checks it for errors.
 .Nm
@@ -322,11 +335,11 @@ desired width.
 Prepend
 .Ar EXPR
 to all accounts reported.  That is, the option
-.Fl \-account Ar \*q'Personal'\*q
+.Fl \-account Ar \*q\[aq]Personal\[aq]\*q
 would tack
 .Ar Personal:
 and
-.Fl \-account Ar \*qtag('VAT')\*q
+.Fl \-account Ar \*qtag(\[aq]VAT\[aq])\*q
 would tack the value of the VAT tag to the beginning of every account
 reported in a
 .Ic balance
@@ -345,6 +358,9 @@ Report only real transactions, with no automated or virtual
 transactions used.
 .It Fl \-add-budget
 Show only un-budgeted postings.
+.It Fl \-align-intervals
+Use the beginning of the reporting period as the start of intervals, rather
+than the beginning of the week, month, quarter or year.
 .It Fl \-amount Ar EXPR Pq Fl t
 Apply the given value expression to the posting amount.  Using
 .Fl \-amount Ar EXPR
@@ -456,7 +472,7 @@ according to
 .Ar FMT .
 .It Fl \-current Pq Fl c
 Shorthand for
-.Fl \-limit Ar "'date <= today'" .
+.Fl \-limit Ar "\[aq]date <= today\[aq]" .
 .It Fl \-daily Pq Fl D
 Shorthand for
 .Fl \-period Ar daily .
@@ -557,6 +573,13 @@ script, implemented in Perl, is provided in the
 distribution.  Downloaded quote price are then appended to the price
 database, usually specified using the environment variable
 .Ev LEDGER_PRICE_DB .
+.It Fl \-getquote Ar PATH
+Specify the path or command name for the price quote retrieval script.
+The default value is
+.Em getquote .
+This option allows you to use a custom script or specify an absolute path
+to the quote retrieval program.  The script will be called with the
+commodity symbol as an argument and should return the current price.
 .It Fl \-effective
 Show auxiliary dates for all calculations.  Alias for
 .Fl \-aux-date .
@@ -574,10 +597,12 @@ report.
 .It Fl \-exact
 Report beginning and ending of periods by the date of the first and last
 posting occurring in that period.
-.It Fl \-exchange Ar COMMODITY Oo , Ar COMMODITY, ... Oc Pq Fl X
+.It Fl \-exchange Qo Ar COMMODITY Oo , Ar COMMODITY, ... Oc Qc Pq Fl X
 Display values in terms of the given
 .Ar COMMODITY .
-The latest available price is used.
+If multiple commodities are given, values in a listed commodity will remain
+as-is, and others will be displayed in the first listed commodity they can be
+converted to.
 .It Fl \-file Ar FILE Pq Fl f
 Read journal data from
 .Ar FILE .
@@ -614,6 +639,35 @@ Use the given format string
 to print output.
 .It Fl \-gain Pq Fl G
 Report net gain or loss for commodities that have a price history.
+.It Fl \-gain-since Ar DATE
+When combined with
+.Fl \-gain ,
+replace the cost basis for pre-date lots with their market value at
+.Ar DATE .
+This yields period-relative gain: how much value has changed
+.Em since
+.Ar DATE
+rather than since the original purchase.
+For example:
+.Bd -literal -offset indent
+P 2022/01/01 AAPL $150
+P 2022/12/31 AAPL $180
+
+2021/06/01 Buy
+    Assets:Brokerage    10 AAPL @ $120
+    Assets:Cash
+
+2022/07/01 Buy more
+    Assets:Brokerage    10 AAPL @ $160
+    Assets:Cash
+.Ed
+.Pp
+.Ic ledger bal --gain
+reports $600 (gain from cost $120 and $160).
+.Ic "ledger bal --gain --gain-since 2022/01/01"
+reports $500 instead: the first lot uses $150 (market at 2022-01-01) as
+its baseline, so its gain is 10\[mu]($180\[mi]$150)=$300; the second lot
+still uses cost $160, contributing 10\[mu]($180\[mi]$160)=$200.
 .It Fl \-generated
 Include auto-generated postings (such as those from automated
 transactions) in the report, in cases where you normally wouldn't want
@@ -635,6 +689,24 @@ Set the format for the headers that separate reports section of
 a grouped report.  Only has effect with a
 .Fl \-group-by Ar EXPR
 register report.
+.It Fl \-hashes Ar ALGO
+Record the hash of each transaction in a
+.Ar Hash
+metadata value, according to the hashing algorithm given by the
+.Ar ALGO
+argument. Supported algorithms are
+.Ar sha512
+or
+.Ar sha512_half
+where both use SHA512, but the latter only stores the first half of
+the hash value.
+.Pp
+If a
+.Ar Hash
+metadata value is explicitly provided and does not match what would
+have been generated, an error is reported. Hashes depend on previous
+entries, such that setting a single hash value is sufficient to
+guarantee the shape of the entire history leading up to that entry.
 .It Fl \-head Ar INT
 Print the first
 .Ar INT
@@ -680,9 +752,15 @@ Only useful on a register report.  Alias for
 .Fl \-tail .
 .It Fl \-leeway Ar INT Pq Fl Z
 Alias for
-.Fl \-price-expr .
+.Fl \-price-exp .
 .It Fl \-limit Ar EXPR Pq Fl l
 Limit postings in calculations.
+.It Fl \-lisp-date-format Ar FORMAT
+Specify the format for dates in lisp output. The default uses the Emacs Lisp
+time format. Other options are
+.Ql seconds
+(Unix epoch seconds) or a strftime format string like
+.Ql %Y-%m-%d .
 .It Fl \-lot-dates
 Report the date on which each commodity in a balance report was
 purchased.
@@ -697,6 +775,18 @@ a balance report.
 .It Fl \-lots-actual
 Preserve the uniqueness of commodities so they aren't merged during
 reporting without printing the lot annotations.
+.It Fl \-lots-fifo
+Report lots sorted by acquisition date, oldest first (FIFO order).
+Implies
+.Fl \-lot-prices
+and
+.Fl \-lot-dates .
+.It Fl \-lots-lifo
+Report lots sorted by acquisition date, newest first (LIFO order).
+Implies
+.Fl \-lot-prices
+and
+.Fl \-lot-dates .
 .It Fl \-market Pq Fl V
 Use the latest market value for all commodities.
 .It Fl \-master-account Ar STR
@@ -813,10 +903,10 @@ spaces at the beginning of each line of the output.
 .It Fl \-price Pq Fl I
 Use the price of the commodity purchase for performing calculations.
 .It Fl \-price-db Ar FILE
-.It Fl \-price-exp Ar STR Pq Fl Z
+.It Fl \-price-exp Ar INT Pq Fl Z
 Set the expected freshness of price quotes, in
 .Ar INT
-minutes.  That
+hours.  That
 is, if the last known quote for any commodity is older than this value,
 and if
 .Fl \-download
@@ -887,6 +977,13 @@ to show unrealized capital in a gain/losses report.
 When generating a ledger transaction from a CSV file using the
 .Ic convert
 command, add CSV, Imported, and UUID meta-data.
+.It Fl \-round
+Round all calculated values to the display precision of their commodity.
+This is the default behavior for display, but this option explicitly forces
+rounding in the expression pipeline, which is useful when
+.Fl \-unround
+has been set in the init file and you want to override it for a specific
+invocation.
 .It Fl \-seed Ar INT
 Set the random seed to
 .Ar INT
@@ -914,6 +1011,8 @@ can be day names, their abbreviations like
 .Qq Mon ,
 or the weekday number
 starting at 0 for Sunday.
+.It Fl \-sort-all
+Sort all accounts and commodities.
 .It Fl \-strict
 Accounts, tags or commodities not previously declared will cause warnings.
 .It Fl \-subtotal Pq Fl s
@@ -1055,9 +1154,9 @@ query terms with an implicit OR operator between them.  The following terms
 are accepted:
 .Bl -tag -width "term and term"
 .It Ar regex
-A bare string is taken as a regular expression matching the full account name.
-Thus, to report the current balance for all assets and liabilities, you would
-use:
+A bare string is taken as a regular expression (PCRE) matching the full account
+name. Thus, to report the current balance for all assets and liabilities, you
+would use:
 .Pp
 .Dl ledger bal asset liab
 .It Ic payee Ar regex Pq Ic \&@ Ns Ar regex
@@ -1279,11 +1378,11 @@ for values that have a per-unit cost.
 .It Fn quoted expression
 Surround
 .Ar expression
-with double-quotes.
-.It Fn quoted_rfc4180 expression
+with double quotes.
+.It Fn quoted_rfc expression
 Surround
 .Ar expression
-with double-quotes, compatible with rfc 4180.
+with double quotes, compliant with rfc 4180.
 .It Sy real
 .\" Is there a difference between real and actual?
 Return true if the transaction is real, i.e not an automated or virtual
@@ -1371,6 +1470,36 @@ long.
 Return true if the transaction is virtual, e.g automated, false otherwise.
 .\".It Sy xact
 .\" A variable scope
+.It Fn averaged_lots
+Return lots with averaged prices.
+.It Fn clear_commodity
+Clear commodity pricing information.
+.It Fn commodity_price commodity
+Return the price of the given commodity.
+.It Fn display_amount amount
+Format amount for display.
+.It Fn display_total total
+Format total for display.
+.It Fn lot_date posting
+Return the lot date of a posting.
+.It Fn lot_price posting
+Return the lot price of a posting.
+.It Fn lot_tag posting
+Return the lot tag of a posting.
+.It Fn nail_down amount
+Fix the precision of an amount.
+.It Fn round amount
+Round an amount to standard precision.
+.It Fn rounded amount
+Return rounded version of amount.
+.It Fn set_commodity_price commodity price
+Set the price for a commodity.
+.It Fn top_amount amount
+Return the top-level amount.
+.It Fn unround amount
+Remove rounding from an amount.
+.It Fn unrounded amount
+Return unrounded version of amount.
 .El
 .\".Sh ENTRIES
 .\".Sh FORMATS
@@ -1435,14 +1564,14 @@ may be set using an environment variable if the option has a long name.
 For example setting the environment variable
 .Ev LEDGER_DATE_FORMAT="%d.%m.%Y"
 will have the same effect as specifying
-.Fl \-date-format Ar '%d.%m.%Y'
+.Fl \-date-format Ar \[aq]%d.%m.%Y\[aq]
 on the command-line.  Options on the command-line always take precedence over
 environment variable settings, however.
 .Sh FILES
 .Bl -tag -width -indent
 .It Pa $XDG_CONFIG_HOME/ledger/ledgerrc
-.It Pa ~/.config/ledger/ledgerrc
-.It Pa ~/.ledgerrc
+.It Pa \[ti]/.config/ledger/ledgerrc
+.It Pa \[ti]/.ledgerrc
 Your personal
 .Nm
 initializations.
@@ -1450,7 +1579,7 @@ initializations.
 .Sh SEE ALSO
 .Xr beancount 1 ,
 .Xr hledger 1
-
+.Pp
 The full documentation for
 .Nm
 is maintained as a Texinfo manual.  If the

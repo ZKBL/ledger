@@ -16,7 +16,6 @@ set(LEDGER_SOURCES
   chain.cc
   filters.cc
   report.cc
-  views.cc
   select.cc
   session.cc
   option.cc
@@ -25,6 +24,8 @@ set(LEDGER_SOURCES
   iterators.cc
   timelog.cc
   textual.cc
+  textual_directives.cc
+  textual_xacts.cc
   temps.cc
   journal.cc
   account.cc
@@ -51,14 +52,15 @@ set(LEDGER_SOURCES
   times.cc
   error.cc
   utils.cc
-  wcwidth.cc)
+  wcwidth.cc
+  sha512.cc)
 
-if (HAVE_GPGME)
+if(HAVE_GPGME)
   list(APPEND LEDGER_SOURCES
     gpgme.cc)
 endif()
 
-if (HAVE_BOOST_PYTHON)
+if(HAVE_BOOST_PYTHON)
   list(APPEND LEDGER_SOURCES
     py_account.cc
     py_amount.cc
@@ -117,7 +119,6 @@ set(LEDGER_INCLUDES
   print.h
   pstream.h
   ptree.h
-  pyfstream.h
   pyinterp.h
   pyutils.h
   query.h
@@ -135,21 +136,21 @@ set(LEDGER_INCLUDES
   unistring.h
   utils.h
   value.h
-  views.h
   xact.h
+  ${PROJECT_BINARY_DIR}/ledger.hh
   ${PROJECT_BINARY_DIR}/system.hh)
 
 # Windows provides no strptime(), so supply our own.
-if (WIN32 OR CYGWIN)
+if(WIN32 OR CYGWIN)
   list(APPEND LEDGER_INCLUDES
     strptime.h)
   list(APPEND LEDGER_SOURCES
     strptime.cc)
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    add_definitions(
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_compile_options(
       # -Weverything
       # -Wno-disabled-macro-expansion
       # -Wno-padded
@@ -166,45 +167,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
       -Wno-unused-local-typedef
       --system-header-prefix=include/boost/
       --system-header-prefix=boost/)
-
-    macro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-      set(_pch_filename "${_header_filename}.pch")
-
-      set_source_files_properties(
-        ${${_src_list}} PROPERTIES COMPILE_FLAGS "-include ${_header_filename}")
-      if (_other_srcs)
-        set_source_files_properties(
-          ${_other_srcs} PROPERTIES COMPILE_FLAGS "-include ${_header_filename}")
-      endif()
-      list(APPEND ${_src_list} ${_pch_filename})
-
-      set(_args ${CMAKE_CXX_FLAGS})
-      list(APPEND _args ${CMAKE_CXX_FLAGS_DEBUG})
-      if (BUILD_LIBRARY)
-        list(APPEND _args ${CMAKE_SHARED_LIBRARY_CXX_FLAGS})
-      endif()
-      list(APPEND _args "-std=c++11 ")
-      if (CYGWIN)
-        list(APPEND _args "-U__STRICT_ANSI__")
-      endif()
-      list(APPEND _args "-x c++-header " ${_inc})
-      list(APPEND _args -c ${_header_filename} -o ${_pch_filename})
-
-      get_directory_property(DIRINC INCLUDE_DIRECTORIES)
-      foreach(_inc ${DIRINC})
-        list(APPEND _args "-isystem " ${_inc})
-      endforeach(_inc ${DIRINC})
-
-      separate_arguments(_args)
-
-      add_custom_command(OUTPUT ${_pch_filename}
-        COMMAND rm -f ${_pch_filename}
-        COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1} ${_args}
-        DEPENDS ${_header_filename})
-    endmacro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-
-  elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(GXX_WARNING_FLAGS
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(
       -pedantic
       -Wall
       -Winvalid-pch
@@ -222,63 +186,12 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
       -Wno-old-style-cast
       -Wno-deprecated
       -Wno-strict-aliasing)
-
-    add_definitions(${GXX_WARNING_FLAGS})
-
-    macro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-      set(_gch_filename "${_header_filename}.gch")
-
-      set_source_files_properties(
-        ${${_src_list}} PROPERTIES COMPILE_FLAGS "-Winvalid-pch")
-      if (_other_srcs)
-        set_source_files_properties(
-          ${_other_srcs} PROPERTIES COMPILE_FLAGS "-Winvalid-pch")
-      endif()
-      list(APPEND ${_src_list} ${_gch_filename})
-
-      set(_args ${CMAKE_CXX_FLAGS})
-      list(APPEND _args ${CMAKE_CXX_FLAGS_DEBUG})
-      if (BUILD_LIBRARY)
-        list(APPEND _args ${CMAKE_SHARED_LIBRARY_CXX_FLAGS})
-      endif()
-      list(APPEND _args ${GXX_WARNING_FLAGS})
-      list(APPEND _args "-std=c++11 ")
-      if (CYGWIN)
-        list(APPEND _args "-U__STRICT_ANSI__")
-      endif()
-      list(APPEND _args "-x c++-header " ${_inc})
-      list(APPEND _args -c ${_header_filename} -o ${_gch_filename})
-
-      get_directory_property(DIRINC INCLUDE_DIRECTORIES)
-      foreach(_inc ${DIRINC})
-        list(APPEND _args "-I" ${_inc})
-      endforeach(_inc ${DIRINC})
-
-      separate_arguments(_args)
-
-      add_custom_command(OUTPUT ${_gch_filename}
-        COMMAND rm -f ${_gch_filename}
-        COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1} ${_args}
-        DEPENDS ${_header_filename})
-    endmacro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-
-  else()
-    macro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-    endmacro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
   endif()
-else()
-  macro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-  endmacro(ADD_PCH_RULE _header_filename _src_list _other_srcs)
-endif()
-
-if(PRECOMPILE_SYSTEM_HH AND NOT (COMMAND target_precompile_headers))
-  # enable fallback for CMake versions older than 3.16 without target_precompile_headers
-  add_pch_rule(${PROJECT_BINARY_DIR}/system.hh LEDGER_SOURCES LEDGER_CLI_SOURCES)
 endif()
 
 include(GNUInstallDirs)
 
-if (BUILD_LIBRARY)
+if(BUILD_LIBRARY)
   set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
   add_library(libledger SHARED ${LEDGER_SOURCES})
   add_ledger_library_dependencies(libledger)
@@ -287,14 +200,16 @@ if (BUILD_LIBRARY)
     INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}"
     VERSION ${Ledger_VERSION_MAJOR}
     SOVERSION ${Ledger_VERSION_MAJOR})
+  set_source_files_properties(
+    ${LEDGER_CLI_SOURCES} PROPERTIES COMPILE_FLAGS "-fPIC")
 
-  add_executable(ledger main.cc global.cc)
+  add_executable(ledger ${LEDGER_CLI_SOURCES})
   target_link_libraries(ledger libledger)
-  if (HAVE_GPGME)
+  if(HAVE_GPGME)
     target_link_libraries(ledger Gpgmepp)
   endif()
 
-  if (HAVE_BOOST_PYTHON)
+  if(HAVE_BOOST_PYTHON)
     target_link_libraries(ledger ${Python_LIBRARIES})
   endif()
 
@@ -306,8 +221,12 @@ else()
   add_ledger_library_dependencies(ledger)
 endif()
 
-if (PRECOMPILE_SYSTEM_HH AND (COMMAND target_precompile_headers) AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
-  if (BUILD_LIBRARY)
+# Precompiled headers for system.hh significantly reduce build times.
+# This is enabled for all build types (Debug, Release, RelWithDebInfo, etc.)
+# via the PRECOMPILE_SYSTEM_HH option. CMake's target_precompile_headers
+# (available since CMake 3.16) handles PCH generation and reuse automatically.
+if(PRECOMPILE_SYSTEM_HH)
+  if(BUILD_LIBRARY)
     target_precompile_headers(libledger PRIVATE ${PROJECT_BINARY_DIR}/system.hh)
     target_precompile_headers(ledger REUSE_FROM libledger)
   else()
@@ -315,15 +234,21 @@ if (PRECOMPILE_SYSTEM_HH AND (COMMAND target_precompile_headers) AND (CMAKE_BUIL
   endif()
 endif()
 
-if (USE_PYTHON)
-  if (Python_SITEARCH)
-    if (WIN32 AND NOT CYGWIN)
+if(USE_PYTHON)
+  if(Python_SITEARCH)
+    if(WIN32 AND NOT CYGWIN)
       set(_ledger_python_module_name "ledger.pyd")
     elseif(CMAKE_SYSTEM_NAME STREQUAL Darwin)
       set(_ledger_python_module_name "ledger.so")
     else()
       set(_ledger_python_module_name "ledger${CMAKE_SHARED_LIBRARY_SUFFIX}")
     endif()
+
+    # Allow packagers to override where the Python module is installed.
+    # By default this uses Python's site-packages, but systems like Homebrew
+    # may need to install under CMAKE_INSTALL_PREFIX instead.
+    set(LEDGER_PYTHON_INSTALL_DIR "${Python_SITEARCH}" CACHE PATH
+      "Directory to install the ledger Python module into")
 
     # FIXME: symlink would be sufficient:
     # maybe using install(CODE "...") and
@@ -335,7 +260,7 @@ if (USE_PYTHON)
       $<TARGET_FILE:libledger> "${CMAKE_BINARY_DIR}/${_ledger_python_module_name}")
     install(
       FILES "${CMAKE_BINARY_DIR}/${_ledger_python_module_name}"
-      DESTINATION ${Python_SITEARCH})
+      DESTINATION "${LEDGER_PYTHON_INSTALL_DIR}")
   else()
     message(WARNING "Python_SITEARCH not set. Will not install python module.")
   endif()

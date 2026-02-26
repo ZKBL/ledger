@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,7 @@
  *
  * @ingroup report
  */
-#ifndef INCLUDED_CHAIN_H
-#define INCLUDED_CHAIN_H
+#pragma once
 
 #include "utils.h"
 
@@ -50,21 +49,16 @@ class post_t;
 class account_t;
 
 template <typename T>
-class item_handler : public noncopyable
-{
+class item_handler : public noncopyable {
 protected:
-  shared_ptr<item_handler> handler;
+  std::shared_ptr<item_handler> handler;
 
 public:
-  item_handler() {
-    TRACE_CTOR(item_handler, "");
+  item_handler() { TRACE_CTOR(item_handler, ""); }
+  item_handler(std::shared_ptr<item_handler> _handler) : handler(_handler) {
+    TRACE_CTOR(item_handler, "std::shared_ptr<item_handler>");
   }
-  item_handler(shared_ptr<item_handler> _handler) : handler(_handler) {
-    TRACE_CTOR(item_handler, "shared_ptr<item_handler>");
-  }
-  virtual ~item_handler() {
-    TRACE_DTOR(item_handler);
-  }
+  virtual ~item_handler() { TRACE_DTOR(item_handler); }
 
   virtual void title(const string& str) {
     if (handler)
@@ -88,29 +82,21 @@ public:
   }
 };
 
-typedef shared_ptr<item_handler<post_t> > post_handler_ptr;
-typedef shared_ptr<item_handler<account_t> > acct_handler_ptr;
+using post_handler_ptr = std::shared_ptr<item_handler<post_t>>;
+using acct_handler_ptr = std::shared_ptr<item_handler<account_t>>;
 
 class report_t;
 
-post_handler_ptr
-chain_pre_post_handlers(post_handler_ptr base_handler,
-                        report_t&        report);
+post_handler_ptr chain_pre_post_handlers(post_handler_ptr base_handler, report_t& report);
 
-post_handler_ptr
-chain_post_handlers(post_handler_ptr base_handler,
-                    report_t&        report,
-                    bool             for_accounts_report = false);
+post_handler_ptr chain_post_handlers(post_handler_ptr base_handler, report_t& report,
+                                     bool for_accounts_report = false);
 
-inline post_handler_ptr
-chain_handlers(post_handler_ptr handler,
-               report_t&        report,
-               bool             for_accounts_report = false) {
+inline post_handler_ptr chain_handlers(post_handler_ptr handler, report_t& report,
+                                       bool for_accounts_report = false) {
   handler = chain_post_handlers(handler, report, for_accounts_report);
   handler = chain_pre_post_handlers(handler, report);
   return handler;
 }
 
 } // namespace ledger
-
-#endif // INCLUDED_CHAIN_H

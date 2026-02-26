@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,40 +39,37 @@
  *
  * @ingroup util
  */
-#ifndef INCLUDED_PSTREAM_H
-#define INCLUDED_PSTREAM_H
+#pragma once
 
-//#include <istream>
-//#include <streambuf>
+// #include <istream>
+// #include <streambuf>
 
-class ptristream : public std::istream
-{
-  class ptrinbuf : public std::streambuf
-  {
+namespace ledger {
+
+class ptristream : public std::istream {
+  class ptrinbuf : public std::streambuf {
     ptrinbuf(const ptrinbuf&);
     ptrinbuf& operator=(const ptrinbuf&);
 
   protected:
-    char *      ptr;
+    char* ptr;
     std::size_t len;
 
   public:
-    ptrinbuf(char * _ptr, std::size_t _len) : ptr(_ptr), len(_len) {
+    ptrinbuf(char* _ptr, std::size_t _len) : ptr(_ptr), len(_len) {
       if (*ptr && len == 0)
         len = std::strlen(ptr);
 
-      setg(ptr,                 // beginning of putback area
-           ptr,                 // read position
-           ptr+len);            // end position
+      setg(ptr,        // beginning of putback area
+           ptr,        // read position
+           ptr + len); // end position
 
       TRACE_CTOR(ptrinbuf, "char *, std::size_t");
     }
-    ~ptrinbuf() throw() {
-      TRACE_DTOR(ptrinbuf);
-    }
+    ~ptrinbuf() noexcept override { TRACE_DTOR(ptrinbuf); }
 
   protected:
-    virtual int_type underflow() {
+    int_type underflow() override {
       // is read position before end of buffer?
       if (gptr() < egptr())
         return traits_type::to_int_type(*gptr());
@@ -80,22 +77,29 @@ class ptristream : public std::istream
         return EOF;
     }
 
-    virtual pos_type seekoff(off_type off, ios_base::seekdir way,
-                             ios_base::openmode)
-    {
+    pos_type seekoff(off_type off, ios_base::seekdir way, ios_base::openmode) override {
       // cast to avoid gcc '-Wswitch' warning
       // as ios_base::beg/cur/end are not necessarily values of 'way' enum type ios_base::seekdir
       // based on https://svn.boost.org/trac/boost/ticket/7644
       switch (static_cast<int>(way)) {
-      case std::ios::cur:
-        setg(ptr, gptr()+off, ptr+len);
+      case std::ios::beg: {
+        std::streamoff new_pos = std::max(std::streamoff(0), std::min(off, std::streamoff(len)));
+        setg(ptr, ptr + new_pos, ptr + len);
         break;
-      case std::ios::beg:
-        setg(ptr, ptr+off, ptr+len);
+      }
+      case std::ios::cur: {
+        std::streamoff cur_off = gptr() - ptr;
+        std::streamoff new_pos =
+            std::max(std::streamoff(0), std::min(cur_off + off, std::streamoff(len)));
+        setg(ptr, ptr + new_pos, ptr + len);
         break;
-      case std::ios::end:
-        setg(ptr, egptr()+off, ptr+len);
+      }
+      case std::ios::end: {
+        std::streamoff new_pos =
+            std::max(std::streamoff(0), std::min(std::streamoff(len) + off, std::streamoff(len)));
+        setg(ptr, ptr + new_pos, ptr + len);
         break;
+      }
       }
       return pos_type(gptr() - ptr);
     }
@@ -105,10 +109,7 @@ protected:
   ptrinbuf buf;
 
 public:
-  ptristream(char * ptr, std::size_t len = 0)
-    : std::istream(0), buf(ptr, len) {
-    rdbuf(&buf);
-  }
+  ptristream(char* ptr, std::size_t len = 0) : std::istream(nullptr), buf(ptr, len) { rdbuf(&buf); }
 };
 
-#endif // INCLUDED_PSTREAM_H
+} // namespace ledger

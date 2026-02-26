@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,15 +39,11 @@
  *
  * @ingroup extra
  */
-#ifndef INCLUDED_QUOTES_H
-#define INCLUDED_QUOTES_H
+#pragma once
 
 namespace ledger {
 
-optional<price_point_t>
-commodity_quote_from_script(commodity_t& commodity,
-                            const commodity_t * exchange_commodity);
+std::optional<price_point_t> commodity_quote_from_script(commodity_t& commodity,
+                                                         const commodity_t* exchange_commodity);
 
 } // namespace ledger
-
-#endif // INCLUDED_QUOTES_H

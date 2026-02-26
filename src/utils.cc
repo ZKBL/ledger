@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -29,7 +29,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <system.hh>
+#include <cstddef>
+#include <ledger.hh>
+#include <utility>
 
 #include "times.h"
 
@@ -42,16 +44,15 @@
 
 namespace ledger {
 
-DECLARE_EXCEPTION(assertion_failed, std::logic_error);
+class assertion_failed : public std::logic_error {
+public:
+  explicit assertion_failed(const string& why) noexcept : std::logic_error(why) {}
+  ~assertion_failed() noexcept override {}
+};
 
-void debug_assert(const string& reason,
-                  const string& func,
-                  const string& file,
-                  std::size_t   line)
-{
+void debug_assert(const string& reason, const string& func, const string& file, std::size_t line) {
   std::ostringstream buf;
-  buf << "Assertion failed in " << file_context(file, line)
-      << func << ": " << reason;
+  buf << "Assertion failed in " << file_context(file, line) << func << ": " << reason;
   throw assertion_failed(buf.str());
 }
 
@@ -70,94 +71,94 @@ namespace ledger {
 
 bool verify_enabled = false;
 
-typedef std::pair<std::string, std::size_t>     allocation_pair;
-typedef std::map<void *, allocation_pair>       memory_map;
-typedef std::multimap<void *, allocation_pair>  objects_map;
+using allocation_pair = std::pair<std::string, std::size_t>;
+using memory_map = std::map<void*, allocation_pair>;
+using objects_map = std::multimap<void*, allocation_pair>;
 
-typedef std::pair<std::size_t, std::size_t>     count_size_pair;
-typedef std::map<std::string, count_size_pair>  object_count_map;
+using count_size_pair = std::pair<std::size_t, std::size_t>;
+using object_count_map = std::map<std::string, count_size_pair>;
 
 namespace {
-  bool memory_tracing_active = false;
+bool memory_tracing_active = false;
 
-  memory_map  *      live_memory        = NULL;
-  memory_map *       freed_memory       = NULL;
-  object_count_map * live_memory_count  = NULL;
-  object_count_map * total_memory_count = NULL;
-  objects_map *      live_objects       = NULL;
-  object_count_map * live_object_count  = NULL;
-  object_count_map * total_object_count = NULL;
-  object_count_map * total_ctor_count   = NULL;
-}
+memory_map* live_memory = nullptr;
+memory_map* freed_memory = nullptr;
+object_count_map* live_memory_count = nullptr;
+object_count_map* total_memory_count = nullptr;
+objects_map* live_objects = nullptr;
+object_count_map* live_object_count = nullptr;
+object_count_map* total_object_count = nullptr;
+object_count_map* total_ctor_count = nullptr;
+} // namespace
 
-void initialize_memory_tracing()
-{
+void initialize_memory_tracing() {
   memory_tracing_active = false;
 
-  live_memory        = new memory_map;
-  freed_memory       = new memory_map;
-  live_memory_count  = new object_count_map;
+  live_memory = new memory_map;
+  freed_memory = new memory_map;
+  live_memory_count = new object_count_map;
   total_memory_count = new object_count_map;
-  live_objects       = new objects_map;
-  live_object_count  = new object_count_map;
+  live_objects = new objects_map;
+  live_object_count = new object_count_map;
   total_object_count = new object_count_map;
-  total_ctor_count   = new object_count_map;
+  total_ctor_count = new object_count_map;
 
   memory_tracing_active = true;
 }
 
-void shutdown_memory_tracing()
-{
+void shutdown_memory_tracing() {
   memory_tracing_active = false;
 
   if (live_objects) {
     IF_DEBUG("memory.counts")
-      report_memory(std::cerr, true);
-    else IF_DEBUG("memory.counts.live")
-      report_memory(std::cerr);
-    else if (live_objects->size() > 0)
-      report_memory(std::cerr);
+    report_memory(std::cerr, true);
+    else IF_DEBUG("memory.counts.live") report_memory(std::cerr); // NOLINT(bugprone-branch-clone)
+    else if (live_objects->size() > 0) report_memory(std::cerr);
   }
 
-  checked_delete(live_memory);        live_memory        = NULL;
-  checked_delete(freed_memory);       freed_memory       = NULL;
-  checked_delete(live_memory_count);  live_memory_count  = NULL;
-  checked_delete(total_memory_count); total_memory_count = NULL;
-  checked_delete(live_objects);       live_objects       = NULL;
-  checked_delete(live_object_count);  live_object_count  = NULL;
-  checked_delete(total_object_count); total_object_count = NULL;
-  checked_delete(total_ctor_count);   total_ctor_count   = NULL;
+  checked_delete(live_memory);
+  live_memory = nullptr;
+  checked_delete(freed_memory);
+  freed_memory = nullptr;
+  checked_delete(live_memory_count);
+  live_memory_count = nullptr;
+  checked_delete(total_memory_count);
+  total_memory_count = nullptr;
+  checked_delete(live_objects);
+  live_objects = nullptr;
+  checked_delete(live_object_count);
+  live_object_count = nullptr;
+  checked_delete(total_object_count);
+  total_object_count = nullptr;
+  checked_delete(total_ctor_count);
+  total_ctor_count = nullptr;
 }
 
-inline void add_to_count_map(object_count_map& the_map,
-                             const char * name, std::size_t size)
-{
-  object_count_map::iterator k = the_map.find(name);
-  if (k != the_map.end()) {
+inline void add_to_count_map(object_count_map& the_map, const char* name, std::size_t size) {
+  if (auto k = the_map.find(name); k != the_map.end()) {
     (*k).second.first++;
     (*k).second.second += size;
   } else {
-    std::pair<object_count_map::iterator, bool> result =
-      the_map.insert(object_count_map::value_type(name, count_size_pair(1, size)));
-    VERIFY(result.second);
+    auto [iter, inserted] =
+        the_map.insert(object_count_map::value_type(name, count_size_pair(1, size)));
+    VERIFY(inserted);
   }
 }
 
-std::size_t current_memory_size()
-{
+std::size_t current_memory_size() {
   std::size_t memory_size = 0;
 
-  foreach (const object_count_map::value_type& pair, *live_memory_count)
+  for (const object_count_map::value_type& pair : *live_memory_count)
     memory_size += pair.second.second;
 
   return memory_size;
 }
 
-//#if !defined(__has_feature) || !__has_feature(address_sanitizer)
+// #if !defined(__has_feature) || !__has_feature(address_sanitizer)
 
-static void trace_new_func(void * ptr, const char * which, std::size_t size)
-{
-  if (! live_memory || ! memory_tracing_active) return;
+static void trace_new_func(void* ptr, const char* which, std::size_t size) {
+  if (!live_memory || !memory_tracing_active)
+    return;
 
   memory_tracing_active = false;
 
@@ -165,8 +166,7 @@ static void trace_new_func(void * ptr, const char * which, std::size_t size)
   if (i != freed_memory->end())
     freed_memory->erase(i);
 
-  live_memory->insert
-    (memory_map::value_type(ptr, allocation_pair(which, size)));
+  live_memory->insert(memory_map::value_type(ptr, allocation_pair(which, size)));
 
   add_to_count_map(*live_memory_count, which, size);
   add_to_count_map(*total_memory_count, which, size);
@@ -175,9 +175,9 @@ static void trace_new_func(void * ptr, const char * which, std::size_t size)
   memory_tracing_active = true;
 }
 
-static void trace_delete_func(void * ptr, const char * which)
-{
-  if (! live_memory || ! memory_tracing_active) return;
+static void trace_delete_func(void* ptr, const char* which) {
+  if (!live_memory || !memory_tracing_active)
+    return;
 
   memory_tracing_active = false;
 
@@ -191,7 +191,7 @@ static void trace_delete_func(void * ptr, const char * which)
   if (i == live_memory->end()) {
     i = freed_memory->find(ptr);
     if (i != freed_memory->end())
-      VERIFY("Freeing a block of memory twice" == NULL);
+      freed_memory->erase(i);
 #if 0
     // There can be memory allocated by Boost or the standard library, which
     // was allocated before memory tracing got turned on, that the system
@@ -210,8 +210,7 @@ static void trace_delete_func(void * ptr, const char * which)
 
   live_memory->erase(i);
 
-  freed_memory->insert
-    (memory_map::value_type(ptr, allocation_pair(which, size)));
+  freed_memory->insert(memory_map::value_type(ptr, allocation_pair(which, size)));
 
   object_count_map::iterator j = live_memory_count->find(which);
   VERIFY(j != live_memory_count->end());
@@ -223,185 +222,153 @@ static void trace_delete_func(void * ptr, const char * which)
   memory_tracing_active = true;
 }
 
-//#endif // !defined(__has_feature) || !__has_feature(address_sanitizer)
+// #endif // !defined(__has_feature) || !__has_feature(address_sanitizer)
 
 } // namespace ledger
 
-//#if !defined(__has_feature) || !__has_feature(address_sanitizer)
+// #if !defined(__has_feature) || !__has_feature(address_sanitizer)
 
-#ifdef _GLIBCXX_THROW
-void * operator new(std::size_t size) _GLIBCXX_THROW(std::bad_alloc) {
-#else
-void * operator new(std::size_t size) throw (std::bad_alloc) {
-#endif
-  void * ptr = std::malloc(size);
+void* operator new(std::size_t size) {
+  void* ptr = std::malloc(size);
   if (DO_VERIFY() && ledger::memory_tracing_active)
     ledger::trace_new_func(ptr, "new", size);
   return ptr;
 }
-void * operator new(std::size_t size, const std::nothrow_t&) throw() {
-  void * ptr = std::malloc(size);
-  if (DO_VERIFY() && ledger::memory_tracing_active)
-    ledger::trace_new_func(ptr, "new", size);
-  return ptr;
-}
-#ifdef _GLIBCXX_THROW
-void * operator new[](std::size_t size) _GLIBCXX_THROW(std::bad_alloc) {
-#else
-void * operator new[](std::size_t size) throw (std::bad_alloc) {
-#endif
-  void * ptr = std::malloc(size);
+void* operator new[](std::size_t size) {
+  void* ptr = std::malloc(size);
   if (DO_VERIFY() && ledger::memory_tracing_active)
     ledger::trace_new_func(ptr, "new[]", size);
   return ptr;
 }
-void * operator new[](std::size_t size, const std::nothrow_t&) throw() {
-  void * ptr = std::malloc(size);
-  if (DO_VERIFY() && ledger::memory_tracing_active)
-    ledger::trace_new_func(ptr, "new[]", size);
-  return ptr;
-}
-void   operator delete(void * ptr) throw() {
+void operator delete(void* ptr) noexcept {
   if (DO_VERIFY() && ledger::memory_tracing_active)
     ledger::trace_delete_func(ptr, "new");
   std::free(ptr);
 }
-void   operator delete(void * ptr, const std::nothrow_t&) throw() {
+void operator delete(void* ptr, std::size_t) noexcept {
   if (DO_VERIFY() && ledger::memory_tracing_active)
     ledger::trace_delete_func(ptr, "new");
   std::free(ptr);
 }
-void   operator delete[](void * ptr) throw() {
+void operator delete[](void* ptr) noexcept {
   if (DO_VERIFY() && ledger::memory_tracing_active)
     ledger::trace_delete_func(ptr, "new[]");
   std::free(ptr);
 }
-void   operator delete[](void * ptr, const std::nothrow_t&) throw() {
+void operator delete[](void* ptr, std::size_t) noexcept {
   if (DO_VERIFY() && ledger::memory_tracing_active)
     ledger::trace_delete_func(ptr, "new[]");
   std::free(ptr);
 }
 
-//#endif // !defined(__has_feature) || !__has_feature(address_sanitizer)
+// #endif // !defined(__has_feature) || !__has_feature(address_sanitizer)
 
 namespace ledger {
 
 namespace {
-  void stream_commified_number(std::ostream& out, std::size_t num)
-  {
-    std::ostringstream buf;
-    std::ostringstream obuf;
+void stream_commified_number(std::ostream& out, std::size_t num) {
+  std::ostringstream buf;
+  std::ostringstream obuf;
 
-    buf << num;
+  buf << num;
 
-    string number(buf.str());
+  string number(buf.str()); // NOLINT(bugprone-unused-local-non-trivial-variable)
 
-    int integer_digits = 0;
-    // Count the number of integer digits
-    for (const char * p = number.c_str(); *p; p++) {
-      if (*p == '.')
-        break;
-      else if (*p != '-')
-        integer_digits++;
-    }
-
-    for (const char * p = number.c_str(); *p; p++) {
-      if (*p == '.') {
-        obuf << *p;
-        assert(integer_digits <= 3);
-      }
-      else if (*p == '-') {
-        obuf << *p;
-      }
-      else {
-        obuf << *p;
-
-        if (integer_digits > 3 && --integer_digits % 3 == 0)
-          obuf << ',';
-      }
-    }
-
-    out << obuf.str();
+  int integer_digits = 0;
+  // Count the number of integer digits
+  for (const char* p = number.c_str(); *p; p++) {
+    if (*p == '.')
+      break;
+    else if (*p != '-')
+      integer_digits++;
   }
 
-  void stream_memory_size(std::ostream& out, std::size_t size)
-  {
-    std::ostringstream obuf;
+  for (const char* p = number.c_str(); *p; p++) {
+    if (*p == '.') {
+      obuf << *p;
+      assert(integer_digits <= 3);
+    } else if (*p == '-') {
+      obuf << *p;
+    } else {
+      obuf << *p;
 
-    if (size > 10 * 1024 * 1024)
-      obuf << "\033[1m";
-    if (size > 100 * 1024 * 1024)
-      obuf << "\033[31m";
-
-    obuf << std::setw(7);
-
-    if (size < 1024)
-      obuf << size << 'b';
-    else if (size < (1024 * 1024))
-      obuf << int(double(size) / 1024.0) << 'K';
-    else if (size < (1024 * 1024 * 1024))
-      obuf << int(double(size) / (1024.0 * 1024.0)) << 'M';
-    else
-      obuf << int(double(size) / (1024.0 * 1024.0 * 1024.0)) << 'G';
-
-    if (size > 10 * 1024 * 1024)
-      obuf << "\033[0m";
-
-    out << obuf.str();
-  }
-
-  void report_count_map(std::ostream& out, object_count_map& the_map)
-  {
-    foreach (object_count_map::value_type& pair, the_map) {
-      out << "  " << std::right << std::setw(18);
-      stream_commified_number(out, pair.second.first);
-      out << "  " << std::right << std::setw(7);
-      stream_memory_size(out, pair.second.second);
-      out << "  " << std::left  << pair.first
-          << std::endl;
+      --integer_digits;
+      if (integer_digits > 2 && integer_digits % 3 == 0)
+        obuf << ',';
     }
   }
+
+  out << obuf.str();
 }
 
-std::size_t current_objects_size()
-{
+void stream_memory_size(std::ostream& out, std::size_t size) {
+  std::ostringstream obuf;
+
+  if (size > static_cast<std::size_t>(10 * 1024 * 1024))
+    obuf << "\033[1m";
+  if (size > static_cast<std::size_t>(100 * 1024 * 1024))
+    obuf << "\033[31m";
+
+  obuf << std::setw(7);
+
+  if (size < 1024)
+    obuf << size << 'b';
+  else if (size < (static_cast<std::size_t>(1024 * 1024)))
+    obuf << int(double(size) / 1024.0) << 'K';
+  else if (size < (static_cast<std::size_t>(1024 * 1024 * 1024)))
+    obuf << int(double(size) / (1024.0 * 1024.0)) << 'M';
+  else
+    obuf << int(double(size) / (1024.0 * 1024.0 * 1024.0)) << 'G';
+
+  if (size > static_cast<std::size_t>(10 * 1024 * 1024))
+    obuf << "\033[0m";
+
+  out << obuf.str();
+}
+
+void report_count_map(std::ostream& out, object_count_map& the_map) {
+  for (object_count_map::value_type& pair : the_map) {
+    out << "  " << std::right << std::setw(18);
+    stream_commified_number(out, pair.second.first);
+    out << "  " << std::right << std::setw(7);
+    stream_memory_size(out, pair.second.second);
+    out << "  " << std::left << pair.first << '\n';
+  }
+}
+} // namespace
+
+std::size_t current_objects_size() {
   std::size_t objects_size = 0;
 
-  foreach (const object_count_map::value_type& pair, *live_object_count)
+  for (const object_count_map::value_type& pair : *live_object_count)
     objects_size += pair.second.second;
 
   return objects_size;
 }
 
-void trace_ctor_func(void * ptr, const char * cls_name, const char * args,
-                     std::size_t cls_size)
-{
-  if (! live_objects || ! memory_tracing_active) return;
+void trace_ctor_func(void* ptr, const char* cls_name, const char* args, std::size_t cls_size) {
+  if (!live_objects || !memory_tracing_active)
+    return;
 
   memory_tracing_active = false;
 
-  static char name[1024];
-  std::strcpy(name, cls_name);
-  std::strcat(name, "(");
-  std::strcat(name, args);
-  std::strcat(name, ")");
+  std::string name = std::string(cls_name) + "(" + args + ")";
 
   DEBUG("memory.debug", "TRACE_CTOR " << ptr << " " << name);
 
-  live_objects->insert
-    (objects_map::value_type(ptr, allocation_pair(cls_name, cls_size)));
+  live_objects->insert(objects_map::value_type(ptr, allocation_pair(cls_name, cls_size)));
 
   add_to_count_map(*live_object_count, cls_name, cls_size);
   add_to_count_map(*total_object_count, cls_name, cls_size);
   add_to_count_map(*total_object_count, "__ALL__", cls_size);
-  add_to_count_map(*total_ctor_count, name, cls_size);
+  add_to_count_map(*total_ctor_count, name.c_str(), cls_size);
 
   memory_tracing_active = true;
 }
 
-void trace_dtor_func(void * ptr, const char * cls_name, std::size_t cls_size)
-{
-  if (! live_objects || ! memory_tracing_active) return;
+void trace_dtor_func(void* ptr, const char* cls_name, std::size_t cls_size) {
+  if (!live_objects || !memory_tracing_active)
+    return;
 
   memory_tracing_active = false;
 
@@ -436,59 +403,57 @@ void trace_dtor_func(void * ptr, const char * cls_name, std::size_t cls_size)
   memory_tracing_active = true;
 }
 
-void report_memory(std::ostream& out, bool report_all)
-{
-  if (! live_memory) return;
+void report_memory(std::ostream& out, bool report_all) {
+  if (!live_memory)
+    return;
 
   if (live_memory_count->size() > 0) {
     out << "NOTE: There may be memory held by Boost "
-        << "and libstdc++ after ledger::shutdown()" << std::endl;
-    out << "Live memory count:" << std::endl;
+        << "and libstdc++ after ledger::shutdown()" << '\n';
+    out << "Live memory count:" << '\n';
     report_count_map(out, *live_memory_count);
   }
 
   if (live_memory->size() > 0) {
-    out << "Live memory:" << std::endl;
+    out << "Live memory:" << '\n';
 
-    foreach (const memory_map::value_type& pair, *live_memory) {
-      out << "  " << std::right << std::setw(18) << pair.first
-          << "  " << std::right << std::setw(7);
+    for (const memory_map::value_type& pair : *live_memory) {
+      out << "  " << std::right << std::setw(18) << pair.first << "  " << std::right
+          << std::setw(7);
       stream_memory_size(out, pair.second.second);
-      out << "  " << std::left  << pair.second.first
-          << std::endl;
+      out << "  " << std::left << pair.second.first << '\n';
     }
   }
 
   if (report_all && total_memory_count->size() > 0) {
-    out << "Total memory counts:" << std::endl;
+    out << "Total memory counts:" << '\n';
     report_count_map(out, *total_memory_count);
   }
 
   if (live_object_count->size() > 0) {
-    out << "Live object count:" << std::endl;
+    out << "Live object count:" << '\n';
     report_count_map(out, *live_object_count);
   }
 
   if (live_objects->size() > 0) {
-    out << "Live objects:" << std::endl;
+    out << "Live objects:" << '\n';
 
-    foreach (const objects_map::value_type& pair, *live_objects) {
-      out << "  " << std::right << std::setw(18) << pair.first
-          << "  " << std::right << std::setw(7);
+    for (const objects_map::value_type& pair : *live_objects) {
+      out << "  " << std::right << std::setw(18) << pair.first << "  " << std::right
+          << std::setw(7);
       stream_memory_size(out, pair.second.second);
-      out << "  " << std::left  << pair.second.first
-          << std::endl;
+      out << "  " << std::left << pair.second.first << '\n';
     }
   }
 
   if (report_all) {
     if (total_object_count->size() > 0) {
-      out << "Total object counts:" << std::endl;
+      out << "Total object counts:" << '\n';
       report_count_map(out, *total_object_count);
     }
 
     if (total_ctor_count->size() > 0) {
-      out << "Total constructor counts:" << std::endl;
+      out << "Total constructor counts:" << '\n';
       report_count_map(out, *total_ctor_count);
     }
   }
@@ -507,48 +472,42 @@ namespace ledger {
 
 string empty_string("");
 
-strings_list split_arguments(const char * line)
-{
+strings_list split_arguments(const char* line) {
   strings_list args;
 
   char buf[4096];
-  char * q = buf;
+  char* q = buf;
   char in_quoted_string = '\0';
 
-  for (const char * p = line; *p; p++) {
-    if (! in_quoted_string && std::isspace(*p)) {
+  for (const char* p = line; *p; p++) {
+    if (!in_quoted_string && std::isspace(static_cast<unsigned char>(*p))) {
       if (q != buf) {
         *q = '\0';
         args.push_back(buf);
         q = buf;
       }
-    }
-    else if (in_quoted_string != '\'' && *p == '\\') {
+    } else if (in_quoted_string != '\'' && *p == '\\') {
       p++;
-      if (! *p)
+      if (!*p)
         throw_(std::logic_error, _("Invalid use of backslash"));
       *q++ = *p;
-    }
-    else if (in_quoted_string != '"' && *p == '\'') {
+    } else if (in_quoted_string != '"' && *p == '\'') {
       if (in_quoted_string == '\'')
         in_quoted_string = '\0';
       else
         in_quoted_string = '\'';
-    }
-    else if (in_quoted_string != '\'' && *p == '"') {
+    } else if (in_quoted_string != '\'' && *p == '"') {
       if (in_quoted_string == '"')
         in_quoted_string = '\0';
       else
         in_quoted_string = '"';
-    }
-    else {
+    } else {
       *q++ = *p;
     }
   }
 
   if (in_quoted_string)
-    throw_(std::logic_error,
-           _f("Unterminated string, expected '%1%'") % in_quoted_string);
+    throw_(std::logic_error, _f("Unterminated string, expected '%1%'") % in_quoted_string);
 
   if (q != buf) {
     *q = '\0';
@@ -565,36 +524,30 @@ strings_list split_arguments(const char * line)
  * Logging
  */
 
-#if LOGGING_ON
-
 namespace ledger {
 
-log_level_t        _log_level  = LOG_WARN;
-std::ostream *     _log_stream = &std::cerr;
-std::ostringstream _log_buffer;
+log_level_t _log_level = LOG_WARN;
+std::ostream* _log_stream = &std::cerr;
+thread_local std::ostringstream _log_buffer;
 
 #if TRACING_ON
-uint16_t            _trace_level;
+uint16_t _trace_level;
 #endif
 
-static bool  logger_has_run = false;
-static ptime logger_start;
+static bool logger_has_run = false;
+static ptime logger_start; // NOLINT(cert-err58-cpp)
 
-void logger_func(log_level_t level)
-{
-  if (! logger_has_run) {
+void logger_func(log_level_t level) {
+  if (!logger_has_run) {
     logger_has_run = true;
-    logger_start   = TRUE_CURRENT_TIME();
+    logger_start = TRUE_CURRENT_TIME();
 
-#if VERIFY_ON
     IF_VERIFY()
-      *_log_stream << "   TIME  OBJSZ  MEMSZ" << std::endl;
-#endif
+    *_log_stream << "   TIME  OBJSZ  MEMSZ" << '\n';
   }
 
   *_log_stream << std::right << std::setw(5)
-               << (TRUE_CURRENT_TIME() -
-                   logger_start).total_milliseconds() << "ms";
+               << (TRUE_CURRENT_TIME() - logger_start).total_milliseconds() << "ms";
 
 #if VERIFY_ON
   IF_VERIFY() {
@@ -608,16 +561,36 @@ void logger_func(log_level_t level)
   *_log_stream << "  " << std::left << std::setw(7);
 
   switch (level) {
-  case LOG_CRIT:   *_log_stream << "[CRIT]"; break;
-  case LOG_FATAL:  *_log_stream << "[FATAL]"; break;
-  case LOG_ASSERT: *_log_stream << "[ASSRT]"; break;
-  case LOG_ERROR:  *_log_stream << "[ERROR]"; break;
-  case LOG_VERIFY: *_log_stream << "[VERFY]"; break;
-  case LOG_WARN:   *_log_stream << "[WARN]"; break;
-  case LOG_INFO:   *_log_stream << "[INFO]"; break;
-  case LOG_EXCEPT: *_log_stream << "[EXCPT]"; break;
-  case LOG_DEBUG:  *_log_stream << "[DEBUG]"; break;
-  case LOG_TRACE:  *_log_stream << "[TRACE]"; break;
+  case LOG_CRIT:
+    *_log_stream << "[CRIT]";
+    break;
+  case LOG_FATAL:
+    *_log_stream << "[FATAL]";
+    break;
+  case LOG_ASSERT:
+    *_log_stream << "[ASSRT]";
+    break;
+  case LOG_ERROR:
+    *_log_stream << "[ERROR]";
+    break;
+  case LOG_VERIFY:
+    *_log_stream << "[VERFY]";
+    break;
+  case LOG_WARN:
+    *_log_stream << "[WARN]";
+    break;
+  case LOG_INFO:
+    *_log_stream << "[INFO]";
+    break;
+  case LOG_EXCEPT:
+    *_log_stream << "[EXCPT]";
+    break;
+  case LOG_DEBUG:
+    *_log_stream << "[DEBUG]";
+    break;
+  case LOG_TRACE:
+    *_log_stream << "[TRACE]";
+    break;
 
   case LOG_OFF:
   case LOG_ALL:
@@ -625,7 +598,7 @@ void logger_func(log_level_t level)
     break;
   }
 
-  *_log_stream << ' ' << _log_buffer.str() << std::endl;
+  *_log_stream << ' ' << _log_buffer.str() << '\n';
   _log_buffer.clear();
   _log_buffer.str("");
 }
@@ -636,67 +609,62 @@ void logger_func(log_level_t level)
 
 namespace ledger {
 
-optional<std::string>     _log_category;
+optional<std::string> _log_category;
 #if HAVE_BOOST_REGEX_UNICODE
 optional<boost::u32regex> _log_category_re;
 #else
-optional<boost::regex>    _log_category_re;
+optional<boost::regex> _log_category_re;
 #endif
 
-static struct __maybe_enable_debugging {
-  __maybe_enable_debugging() {
-    if (const char * p = std::getenv("LEDGER_DEBUG")) {
-      _log_level    = LOG_DEBUG;
+static struct _maybe_enable_debugging {
+  _maybe_enable_debugging() {
+    if (const char* p = std::getenv("LEDGER_DEBUG")) {
+      _log_level = LOG_DEBUG;
       _log_category = p;
     }
   }
-} __maybe_enable_debugging_obj;
+} _maybe_enable_debugging_obj; // NOLINT(cert-err58-cpp)
 
 } // namespace ledger
 
 #endif // DEBUG_ON
-#endif // LOGGING_ON
 
 /**********************************************************************
  *
  * Timers (allows log xacts to specify cumulative time spent)
  */
 
-#if LOGGING_ON && defined(TIMERS_ON)
+#if TIMERS_ON
 
 namespace ledger {
 
-struct timer_t
-{
-  log_level_t   level;
-  ptime         begin;
+struct timer_t {
+  log_level_t level;
+  ptime begin;
   time_duration spent;
-  std::string   description;
-  bool          active;
+  std::string description;
+  bool active;
 
   timer_t(log_level_t _level, std::string _description)
-    : level(_level), begin(TRUE_CURRENT_TIME()),
-      spent(time_duration(0, 0, 0, 0)),
-      description(_description), active(true) {}
+      : level(_level), begin(TRUE_CURRENT_TIME()), spent(time_duration(0, 0, 0, 0)),
+        description(std::move(_description)), active(true) {}
 };
 
-typedef std::map<std::string, timer_t> timer_map;
+using timer_map = std::map<std::string, timer_t>;
 
 static timer_map timers;
 
-void start_timer(const char * name, log_level_t lvl)
-{
+void start_timer(const char* name, log_level_t lvl) {
 #if VERIFY_ON
   bool tracing_active = memory_tracing_active;
   memory_tracing_active = false;
 #endif
 
-  timer_map::iterator i = timers.find(name);
-  if (i == timers.end()) {
+  if (auto i = timers.find(name); i == timers.end()) {
     timers.insert(timer_map::value_type(name, timer_t(lvl, _log_buffer.str())));
   } else {
     assert((*i).second.description == _log_buffer.str());
-    (*i).second.begin  = TRUE_CURRENT_TIME();
+    (*i).second.begin = TRUE_CURRENT_TIME();
     (*i).second.active = true;
   }
   _log_buffer.clear();
@@ -707,8 +675,7 @@ void start_timer(const char * name, log_level_t lvl)
 #endif
 }
 
-void stop_timer(const char * name)
-{
+void stop_timer(const char* name) {
 #if VERIFY_ON
   bool tracing_active = memory_tracing_active;
   memory_tracing_active = false;
@@ -725,8 +692,7 @@ void stop_timer(const char * name)
 #endif
 }
 
-void finish_timer(const char * name)
-{
+void finish_timer(const char* name) {
 #if VERIFY_ON
   bool tracing_active = memory_tracing_active;
   memory_tracing_active = false;
@@ -748,8 +714,7 @@ void finish_timer(const char * name)
 
   _log_buffer << (*i).second.description << ' ';
 
-  bool need_paren =
-    (*i).second.description[(*i).second.description.size() - 1] != ':';
+  bool need_paren = (*i).second.description[(*i).second.description.size() - 1] != ':';
 
   if (need_paren)
     _log_buffer << '(';
@@ -770,7 +735,7 @@ void finish_timer(const char * name)
 
 } // namespace ledger
 
-#endif // LOGGING_ON && TIMERS_ON
+#endif // TIMERS_ON
 
 /**********************************************************************
  *
@@ -779,13 +744,11 @@ void finish_timer(const char * name)
 
 caught_signal_t caught_signal = NONE_CAUGHT;
 
-void sigint_handler(int)
-{
+void sigint_handler(int) {
   caught_signal = INTERRUPTED;
 }
 
-void sigpipe_handler(int)
-{
+void sigpipe_handler(int) {
   caught_signal = PIPE_CLOSED;
 }
 
@@ -796,39 +759,35 @@ void sigpipe_handler(int)
 
 namespace ledger {
 
-path expand_path(const path& pathname)
-{
+path expand_path(const path& pathname) {
   if (pathname.empty())
     return pathname;
 
-  std::string       path_string = pathname.string();
-  const char *      pfx = NULL;
+  std::string path_string = pathname.string();
+  const char* pfx = nullptr;
   string::size_type pos = path_string.find_first_of('/');
 
   if (path_string.length() == 1 || pos == 1) {
     pfx = std::getenv("HOME");
-#ifdef HAVE_GETPWUID
-    if (! pfx) {
+#if HAVE_GETPWUID
+    if (!pfx) {
       // Punt. We're trying to expand ~/, but HOME isn't set
-      struct passwd * pw = getpwuid(getuid());
-      if (pw)
+      if (struct passwd* pw = getpwuid(getuid()))
         pfx = pw->pw_dir;
     }
 #endif
   }
-#ifdef HAVE_GETPWNAM
+#if HAVE_GETPWNAM
   else {
-    string user(path_string, 1, pos == string::npos ?
-                string::npos : pos - 1);
-    struct passwd * pw = getpwnam(user.c_str());
-    if (pw)
+    string user(path_string, 1, pos == string::npos ? string::npos : pos - 1);
+    if (struct passwd* pw = getpwnam(user.c_str()))
       pfx = pw->pw_dir;
   }
 #endif
 
   // if we failed to find an expansion, return the path unchanged.
 
-  if (! pfx)
+  if (!pfx)
     return pathname;
 
   string result(pfx);
@@ -844,13 +803,11 @@ path expand_path(const path& pathname)
   return result;
 }
 
-path resolve_path(const path& pathname)
-{
+path resolve_path(const path& pathname) {
   path temp = pathname;
   if (temp.string()[0] == '~')
     temp = expand_path(temp);
-  temp.normalize();
-  return temp;
+  return temp.lexically_normal();
 }
 
 } // namespace ledger

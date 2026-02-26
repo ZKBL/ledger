@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -46,44 +46,63 @@
  * is designed to allow this, tracking the amounts of each component
  * commodity separately.
  */
-#ifndef INCLUDED_BALANCE_H
-#define INCLUDED_BALANCE_H
+#pragma once
 
 #include "amount.h"
 
 namespace ledger {
 
-DECLARE_EXCEPTION(balance_error, std::runtime_error);
+class balance_error : public std::runtime_error {
+public:
+  explicit balance_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~balance_error() noexcept override {}
+};
 
 /**
  * @class balance_t
  *
  * @brief A wrapper around amount_t allowing addition of multiple commodities.
  *
- * The balance_t class is appopriate for keeping a running balance
+ * The balance_t class is appropriate for keeping a running balance
  * where amounts of multiple commodities may be involved.
  */
 class balance_t
-  : public equality_comparable<balance_t,
-           equality_comparable<balance_t, amount_t,
-           equality_comparable<balance_t, double,
-           equality_comparable<balance_t, unsigned long,
-           equality_comparable<balance_t, long,
-           additive<balance_t,
-           additive<balance_t, amount_t,
-           additive<balance_t, double,
-           additive<balance_t, unsigned long,
-           additive<balance_t, long,
-           multiplicative<balance_t, amount_t,
-           multiplicative<balance_t, double,
-           multiplicative<balance_t, unsigned long,
-           multiplicative<balance_t, long> > > > > > > > > > > > > >
-{
+    : public equality_comparable<
+          balance_t,
+          equality_comparable<
+              balance_t, amount_t,
+              equality_comparable<
+                  balance_t, double,
+                  equality_comparable<
+                      balance_t, unsigned long,
+                      equality_comparable<
+                          balance_t, long,
+                          additive<
+                              balance_t,
+                              additive<
+                                  balance_t, amount_t,
+                                  additive<balance_t, double,
+                                           additive<balance_t, unsigned long,
+                                                    additive<balance_t, long,
+                                                             multiplicative<
+                                                                 balance_t, amount_t,
+                                                                 multiplicative<
+                                                                     balance_t,
+                                                                     double,
+                                                                     multiplicative<
+                                                                         balance_t,
+                                                                         unsigned long,
+                                                                         multiplicative<
+                                                                             balance_t,
+                                                                             long>>>>>>>>>>>>>> {
 public:
-  typedef std::unordered_map<commodity_t *, amount_t> amounts_map;
-  typedef std::vector<const amount_t *> amounts_array;
+  using amounts_map = std::unordered_map<commodity_t*, amount_t>;
+  using amounts_array = std::vector<const amount_t*>;
+
+  enum class lot_sort_order : std::uint8_t { by_commodity, fifo, lifo };
 
   amounts_map amounts;
+  lot_sort_order sort_order = lot_sort_order::by_commodity;
 
   /**
    * Constructors.  balance_t supports similar forms of construction
@@ -105,14 +124,11 @@ public:
    * value is that amount.  This is the proper way to initialize a
    * balance like '$100.00'.
    */
-  balance_t() {
-    TRACE_CTOR(balance_t, "");
-  }
+  balance_t() { TRACE_CTOR(balance_t, ""); }
   balance_t(const amount_t& amt) {
     if (amt.is_null())
-      throw_(balance_error,
-             _("Cannot initialize a balance from an uninitialized amount"));
-    if (! amt.is_realzero())
+      throw_(balance_error, _("Cannot initialize a balance from an uninitialized amount"));
+    if (!amt.is_realzero())
       amounts.insert(amounts_map::value_type(&amt.commodity(), amt));
     TRACE_CTOR(balance_t, "const amount_t&");
   }
@@ -125,7 +141,7 @@ public:
     amounts.insert(amounts_map::value_type(&temp.commodity(), temp));
     TRACE_CTOR(balance_t, "const string&");
   }
-  explicit balance_t(const char * val) {
+  explicit balance_t(const char* val) {
     amount_t temp(val);
     amounts.insert(amounts_map::value_type(&temp.commodity(), temp));
     TRACE_CTOR(balance_t, "const char *");
@@ -135,40 +151,35 @@ public:
    * Destructor.  Destroys all of the accumulated amounts in the
    * balance.
    */
-  ~balance_t() {
-    TRACE_DTOR(balance_t);
-  }
+  ~balance_t() { TRACE_DTOR(balance_t); }
 
   /**
    * Assignment and copy operators.  An balance may be assigned or copied.
    */
-  balance_t(const balance_t& bal) : amounts(bal.amounts) {
+  balance_t(const balance_t& bal) : amounts(bal.amounts), sort_order(bal.sort_order) {
     TRACE_CTOR(balance_t, "copy");
   }
 
   balance_t& operator=(const balance_t& bal) {
-    if (this != &bal)
+    if (this != &bal) {
       amounts = bal.amounts;
+      sort_order = bal.sort_order;
+    }
     return *this;
   }
   balance_t& operator=(const amount_t& amt) {
     if (amt.is_null())
-      throw_(balance_error,
-             _("Cannot assign an uninitialized amount to a balance"));
+      throw_(balance_error, _("Cannot assign an uninitialized amount to a balance"));
 
     amounts.clear();
-    if (! amt.is_realzero())
+    if (!amt.is_realzero())
       amounts.insert(amounts_map::value_type(&amt.commodity(), amt));
 
     return *this;
   }
 
-  balance_t& operator=(const string& str) {
-    return *this = balance_t(str);
-  }
-  balance_t& operator=(const char * str) {
-    return *this = balance_t(str);
-  }
+  balance_t& operator=(const string& str) { return *this = balance_t(str); }
+  balance_t& operator=(const char* str) { return *this = balance_t(str); }
 
   /**
    * Comparison operators.  Balances are fairly restrictive in terms
@@ -185,13 +196,10 @@ public:
    * method, to determine a market valuation at some specific moment
    * in time.
    */
-  bool operator==(const balance_t& bal) const {
-    return amounts == bal.amounts;
-  }
+  bool operator==(const balance_t& bal) const { return amounts == bal.amounts; }
   bool operator==(const amount_t& amt) const {
     if (amt.is_null())
-      throw_(balance_error,
-             _("Cannot compare a balance to an uninitialized amount"));
+      throw_(balance_error, _("Cannot compare a balance to an uninitialized amount"));
 
     if (amt.is_realzero())
       return amounts.empty();
@@ -211,49 +219,25 @@ public:
    */
   balance_t& operator+=(const balance_t& bal);
   balance_t& operator+=(const amount_t& amt);
-  balance_t& operator+=(const double val) {
-    return *this += amount_t(val);
-  }
-  balance_t& operator+=(const unsigned long val) {
-    return *this += amount_t(val);
-  }
-  balance_t& operator+=(const long val) {
-    return *this += amount_t(val);
-  }
+  balance_t& operator+=(const double val) { return *this += amount_t(val); }
+  balance_t& operator+=(const unsigned long val) { return *this += amount_t(val); }
+  balance_t& operator+=(const long val) { return *this += amount_t(val); }
 
   balance_t& operator-=(const balance_t& bal);
   balance_t& operator-=(const amount_t& amt);
-  balance_t& operator-=(const double val) {
-    return *this -= amount_t(val);
-  }
-  balance_t& operator-=(const unsigned long val) {
-    return *this -= amount_t(val);
-  }
-  balance_t& operator-=(const long val) {
-    return *this -= amount_t(val);
-  }
+  balance_t& operator-=(const double val) { return *this -= amount_t(val); }
+  balance_t& operator-=(const unsigned long val) { return *this -= amount_t(val); }
+  balance_t& operator-=(const long val) { return *this -= amount_t(val); }
 
   balance_t& operator*=(const amount_t& amt);
-  balance_t& operator*=(const double val) {
-    return *this *= amount_t(val);
-  }
-  balance_t& operator*=(const unsigned long val) {
-    return *this *= amount_t(val);
-  }
-  balance_t& operator*=(const long val) {
-    return *this *= amount_t(val);
-  }
+  balance_t& operator*=(const double val) { return *this *= amount_t(val); }
+  balance_t& operator*=(const unsigned long val) { return *this *= amount_t(val); }
+  balance_t& operator*=(const long val) { return *this *= amount_t(val); }
 
   balance_t& operator/=(const amount_t& amt);
-  balance_t& operator/=(const double val) {
-    return *this /= amount_t(val);
-  }
-  balance_t& operator/=(const unsigned long val) {
-    return *this /= amount_t(val);
-  }
-  balance_t& operator/=(const long val) {
-    return *this /= amount_t(val);
-  }
+  balance_t& operator/=(const double val) { return *this /= amount_t(val); }
+  balance_t& operator/=(const unsigned long val) { return *this /= amount_t(val); }
+  balance_t& operator/=(const long val) { return *this /= amount_t(val); }
 
   /**
    * Unary arithmetic operators.  There are only a few unary methods
@@ -289,33 +273,32 @@ public:
    * in_place_reduce()
    * in_place_unreduce()
    */
-  balance_t negated() const {
+  [[nodiscard]] balance_t negated() const {
     balance_t temp(*this);
     temp.in_place_negate();
     return temp;
   }
   void in_place_negate() {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_negate();
   }
-  balance_t operator-() const {
-    return negated();
-  }
+  balance_t operator-() const { return negated(); }
 
-  balance_t abs() const {
+  [[nodiscard]] balance_t abs() const {
     balance_t temp;
-    foreach (const amounts_map::value_type& pair, amounts)
+    temp.sort_order = sort_order;
+    for (const amounts_map::value_type& pair : amounts)
       temp += pair.second.abs();
     return temp;
   }
 
-  balance_t rounded() const {
+  [[nodiscard]] balance_t rounded() const {
     balance_t temp(*this);
     temp.in_place_round();
     return temp;
   }
   void in_place_round() {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_round();
   }
 
@@ -326,48 +309,67 @@ public:
   }
 
   void in_place_roundto(int places) {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_roundto(places);
   }
 
-  balance_t truncated() const {
+  [[nodiscard]] balance_t truncated() const {
     balance_t temp(*this);
     temp.in_place_truncate();
     return temp;
   }
   void in_place_truncate() {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_truncate();
   }
 
-  balance_t floored() const {
+  [[nodiscard]] balance_t display_rounded() const {
+    balance_t temp(*this);
+    temp.in_place_display_round();
+    return temp;
+  }
+  void in_place_display_round() {
+    for (amounts_map::value_type& pair : amounts)
+      pair.second.in_place_roundto(pair.second.display_precision());
+  }
+
+  [[nodiscard]] balance_t rounded_to_commodity_precision() const {
+    balance_t temp(*this);
+    temp.in_place_round_to_commodity_precision();
+    return temp;
+  }
+  void in_place_round_to_commodity_precision() {
+    for (amounts_map::value_type& pair : amounts)
+      pair.second.in_place_round_to_commodity_precision();
+  }
+
+  [[nodiscard]] balance_t floored() const {
     balance_t temp(*this);
     temp.in_place_floor();
     return temp;
   }
   void in_place_floor() {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_floor();
   }
 
-  balance_t ceilinged() const {
+  [[nodiscard]] balance_t ceilinged() const {
     balance_t temp(*this);
     temp.in_place_ceiling();
     return temp;
   }
   void in_place_ceiling() {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_ceiling();
   }
 
-
-  balance_t unrounded() const {
+  [[nodiscard]] balance_t unrounded() const {
     balance_t temp(*this);
     temp.in_place_unround();
     return temp;
   }
   void in_place_unround() {
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second.in_place_unround();
   }
 
@@ -380,7 +382,8 @@ public:
     // A temporary must be used here because reduction may cause
     // multiple component amounts to collapse to the same commodity.
     balance_t temp;
-    foreach (const amounts_map::value_type& pair, amounts)
+    temp.sort_order = sort_order;
+    for (const amounts_map::value_type& pair : amounts)
       temp += pair.second.reduced();
     *this = temp;
   }
@@ -394,14 +397,14 @@ public:
     // A temporary must be used here because unreduction may cause
     // multiple component amounts to collapse to the same commodity.
     balance_t temp;
-    foreach (const amounts_map::value_type& pair, amounts)
+    temp.sort_order = sort_order;
+    for (const amounts_map::value_type& pair : amounts)
       temp += pair.second.unreduced();
     *this = temp;
   }
 
-  optional<balance_t>
-  value(const datetime_t&   moment      = datetime_t(),
-        const commodity_t * in_terms_of = NULL) const;
+  optional<balance_t> value(const datetime_t& moment = datetime_t(),
+                            const commodity_t* in_terms_of = nullptr) const;
 
   /**
    * Truth tests.  An balance may be truth test in two ways:
@@ -421,68 +424,61 @@ public:
    * if the exact amount it contains is subsequently subtracted from
    * it.
    */
-  operator bool() const {
-    return is_nonzero();
-  }
+  operator bool() const { return is_nonzero(); }
 
-  bool is_nonzero() const {
+  [[nodiscard]] bool is_nonzero() const {
     if (is_empty())
       return false;
 
-    foreach (const amounts_map::value_type& pair, amounts)
+    for (const amounts_map::value_type& pair : amounts)
       if (pair.second.is_nonzero())
         return true;
     return false;
   }
 
-  bool is_zero() const {
+  [[nodiscard]] bool is_zero() const {
     if (is_empty())
       return true;
 
-    foreach (const amounts_map::value_type& pair, amounts)
-      if (! pair.second.is_zero())
+    for (const amounts_map::value_type& pair : amounts)
+      if (!pair.second.is_zero())
         return false;
     return true;
   }
 
-  bool is_realzero() const {
+  [[nodiscard]] bool is_realzero() const {
     if (is_empty())
       return true;
 
-    foreach (const amounts_map::value_type& pair, amounts)
-      if (! pair.second.is_realzero())
+    for (const amounts_map::value_type& pair : amounts)
+      if (!pair.second.is_realzero())
         return false;
     return true;
   }
 
-  bool is_empty() const {
-    return amounts.size() == 0;
-  }
-  bool single_amount() const {
-    return amounts.size() == 1;
-  }
+  [[nodiscard]] bool is_empty() const { return amounts.size() == 0; }
+  [[nodiscard]] bool single_amount() const { return amounts.size() == 1; }
 
   /**
    * Conversion methods.  A balance can be converted to an amount, but
    * only if contains a single component amount.
    */
-  operator string() const {
-    return to_string();
-  }
-  string to_string() const {
+  operator string() const { return to_string(); }
+  [[nodiscard]] string to_string() const {
     std::ostringstream buf;
     print(buf);
     return buf.str();
   }
 
   amount_t to_amount() const {
+    // NOLINTBEGIN(bugprone-branch-clone)
     if (is_empty())
       throw_(balance_error, _("Cannot convert an empty balance to an amount"));
     else if (amounts.size() == 1)
       return amounts.begin()->second;
     else
-      throw_(balance_error,
-             _("Cannot convert a balance with multiple commodities to an amount"));
+      throw_(balance_error, _("Cannot convert a balance with multiple commodities to an amount"));
+    // NOLINTEND(bugprone-branch-clone)
     return amount_t();
   }
 
@@ -499,19 +495,16 @@ public:
    * component of the balance.  If no matching element can be found,
    * boost::none is returned.
    */
-  std::size_t commodity_count() const {
-    return amounts.size();
-  }
+  std::size_t commodity_count() const { return amounts.size(); }
 
-  optional<amount_t>
-  commodity_amount(const optional<const commodity_t&>& commodity = none) const;
+  optional<amount_t> commodity_amount(const optional<const commodity_t&>& commodity = none) const;
 
   amounts_map::iterator find_by_name(const commodity_t& comm);
   amounts_map::const_iterator find_by_name(const commodity_t& comm) const;
 
   balance_t number() const {
     balance_t temp;
-    foreach (const amounts_map::value_type& pair, amounts)
+    for (const amounts_map::value_type& pair : amounts)
       temp += pair.second.number();
     return temp;
   }
@@ -537,7 +530,7 @@ public:
    * user.  Mostly used by `print' and other routinse where the sort
    * order of the amounts' commodities is significant.
    */
-  void map_sorted_amounts(function<void(const amount_t&)> fn) const;
+  void map_sorted_amounts(const function<void(const amount_t&)>& fn) const;
 
   /**
    * Printing methods.  A balance may be output to a stream using the
@@ -560,10 +553,8 @@ public:
    * relative amounts of those commodities.  There is no option to
    * change this behavior.
    */
-  void print(std::ostream&       out,
-             const int           first_width  = -1,
-             const int           latter_width = -1,
-             const uint_least8_t flags        = AMOUNT_PRINT_NO_FLAGS) const;
+  void print(std::ostream& out, const int first_width = -1, const int latter_width = -1,
+             const uint_least8_t flags = AMOUNT_PRINT_NO_FLAGS) const;
 
   /**
    * Debugging methods.  There are two methods defined to help with
@@ -579,7 +570,7 @@ public:
   void dump(std::ostream& out) const {
     out << "BALANCE(";
     bool first = true;
-    foreach (const amounts_map::value_type& pair, amounts) {
+    for (const amounts_map::value_type& pair : amounts) {
       if (first)
         first = false;
       else
@@ -589,9 +580,9 @@ public:
     out << ")";
   }
 
-  bool valid() const {
-    foreach (const amounts_map::value_type& pair, amounts)
-      if (! pair.second.valid()) {
+  [[nodiscard]] bool valid() const {
+    for (const amounts_map::value_type& pair : amounts)
+      if (!pair.second.valid()) {
         DEBUG("ledger.validate", "balance_t: ! pair.second.valid()");
         return false;
       }
@@ -607,7 +598,7 @@ inline std::ostream& operator<<(std::ostream& out, const balance_t& bal) {
 void put_balance(property_tree::ptree& pt, const balance_t& bal);
 
 balance_t average_lot_prices(const balance_t& bal);
+balance_t fifo_lot_prices(const balance_t& bal);
+balance_t lifo_lot_prices(const balance_t& bal);
 
 } // namespace ledger
-
-#endif // INCLUDED_BALANCE_H

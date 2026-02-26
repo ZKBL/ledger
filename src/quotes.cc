@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -38,34 +38,64 @@
 
 namespace ledger {
 
-optional<price_point_t>
-commodity_quote_from_script(commodity_t& commodity,
-                            const commodity_t * exchange_commodity)
-{
+static std::string shell_escape(const std::string& str) {
+  std::string result = "'";
+  for (char c : str) {
+    if (c == '\'')
+      result += "'\\''";
+    else
+      result += c;
+  }
+  result += "'";
+  return result;
+}
+
+std::optional<price_point_t> commodity_quote_from_script(commodity_t& commodity,
+                                                         const commodity_t* exchange_commodity) {
   DEBUG("commodity.download", "downloading quote for symbol " << commodity.symbol());
 #if DEBUG_ON
   if (exchange_commodity)
-    DEBUG("commodity.download",
-          "  in terms of commodity " << exchange_commodity->symbol());
+    DEBUG("commodity.download", "  in terms of commodity " << exchange_commodity->symbol());
 #endif
 
-  char buf[256];
+  char buf[4096];
   buf[0] = '\0';
 
-  string getquote_cmd("getquote \"");
-  getquote_cmd += commodity.symbol();
-  getquote_cmd += "\" \"";
+  string getquote_cmd;
+  if (commodity_pool_t::current_pool->getquote)
+    getquote_cmd = shell_escape(commodity_pool_t::current_pool->getquote->string());
+  else
+    getquote_cmd = "getquote";
+
+  getquote_cmd += " ";
+  getquote_cmd += shell_escape(commodity.symbol());
+  getquote_cmd += " ";
   if (exchange_commodity)
-    getquote_cmd += exchange_commodity->symbol();
-  getquote_cmd += "\"";
+    getquote_cmd += shell_escape(exchange_commodity->symbol());
+  else
+    getquote_cmd += "''";
 
   DEBUG("commodity.download", "invoking command: " << getquote_cmd);
 
   bool success = true;
 #if !defined(_WIN32) && !defined(__CYGWIN__)
-  if (FILE * fp = popen(getquote_cmd.c_str(), "r")) {
-    if (std::feof(fp) || ! std::fgets(buf, 255, fp))
+  if (FILE* fp = popen(getquote_cmd.c_str(), "r")) {
+    if (std::feof(fp) || !std::fgets(buf, sizeof(buf), fp)) {
       success = false;
+    } else {
+      // Check for truncation (no newline means line was too long)
+      std::size_t buflen = std::strlen(buf);
+      if (buflen > 0 && buf[buflen - 1] != '\n') {
+        // Consume rest of line
+        char discard[4096];
+        while (std::fgets(discard, sizeof(discard), fp) != nullptr) {
+          std::size_t dlen = std::strlen(discard);
+          if (dlen > 0 && discard[dlen - 1] == '\n')
+            break;
+        }
+        success = false; // Don't process truncated output
+      }
+    }
     if (pclose(fp) != 0)
       success = false;
   } else {
@@ -73,34 +103,35 @@ commodity_quote_from_script(commodity_t& commodity,
   }
 
   if (success && buf[0]) {
-    if (char * p = std::strchr(buf, '\n')) *p = '\0';
+    if (char* p = std::strchr(buf, '\n'))
+      *p = '\0';
     DEBUG("commodity.download", "downloaded quote: " << buf);
 
-    if (optional<std::pair<commodity_t *, price_point_t> > point =
-        commodity_pool_t::current_pool->parse_price_directive(buf)) {
+    if (std::optional<std::pair<commodity_t*, price_point_t>> point =
+            commodity_pool_t::current_pool->parse_price_directive(buf)) {
       if (commodity_pool_t::current_pool->price_db) {
         ofstream database(*commodity_pool_t::current_pool->price_db,
                           std::ios_base::out | std::ios_base::app);
-        database << "P "
-                 << format_datetime(point->second.when, FMT_WRITTEN)
-                 << " " << commodity.symbol()
-                 << " " << point->second.price
-                 << std::endl;
+        database << "P " << format_datetime(point->second.when, FMT_WRITTEN) << " "
+                 << commodity.symbol() << " " << point->second.price << '\n';
       }
       return point->second;
     }
   } else {
-    DEBUG("commodity.download",
-          "Failed to download price for '" << commodity.symbol() <<
-          "' (command: \"getquote " << commodity.symbol() <<
-          " " << (exchange_commodity ?
-                  exchange_commodity->symbol() : "''") << "\")");
+    DEBUG("commodity.download", "Failed to download price for '"
+                                    << commodity.symbol() << "' (command: \""
+                                    << (commodity_pool_t::current_pool->getquote
+                                            ? commodity_pool_t::current_pool->getquote->string()
+                                            : "getquote")
+                                    << " " << commodity.symbol() << " "
+                                    << (exchange_commodity ? exchange_commodity->symbol() : "''")
+                                    << "\")");
 
     // Don't try to download this commodity again.
     commodity.add_flags(COMMODITY_NOMARKET);
   }
 #endif
-  return none;
+  return std::nullopt;
 }
 
 } // namespace ledger

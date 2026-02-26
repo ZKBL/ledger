@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -41,27 +41,24 @@
 
 namespace ledger {
 
-format_posts::format_posts(report_t&               _report,
-                           const string&           format,
-                           const optional<string>& _prepend_format,
-                           std::size_t             _prepend_width)
-  : report(_report), prepend_width(_prepend_width),
-    last_xact(NULL), last_post(NULL), first_report_title(true)
-{
-  const char * f = format.c_str();
+format_posts::format_posts(report_t& _report, const string& format,
+                           const optional<string>& _prepend_format, std::size_t _prepend_width)
+    : report(_report), prepend_width(_prepend_width), last_xact(nullptr), last_post(nullptr),
+      first_report_title(true) {
+  const char* f = format.c_str();
 
-  if (const char * p = std::strstr(f, "%/")) {
-    first_line_format.parse_format
-      (string(f, 0, static_cast<std::string::size_type>(p - f)));
-    const char * n = p + 2;
-    if (const char * pp = std::strstr(n, "%/")) {
-      next_lines_format.parse_format
-        (string(n, 0, static_cast<std::string::size_type>(pp - n)),
-         first_line_format);
+  if (const char* p = std::strstr(f, "%/")) {
+    first_line_format.parse_format(string(f, static_cast<std::string::size_type>(p - f)));
+    const char* n = p + 2;
+    // NOLINTBEGIN(bugprone-branch-clone)
+    if (const char* pp = std::strstr(n, "%/")) {
+      next_lines_format.parse_format(string(n, static_cast<std::string::size_type>(pp - n)),
+                                     first_line_format);
       between_format.parse_format(string(pp + 2), first_line_format);
     } else {
       next_lines_format.parse_format(string(n), first_line_format);
     }
+    // NOLINTEND(bugprone-branch-clone)
   } else {
     first_line_format.parse_format(format);
     next_lines_format.parse_format(format);
@@ -73,20 +70,17 @@ format_posts::format_posts(report_t&               _report,
   TRACE_CTOR(format_posts, "report&, const string&, bool");
 }
 
-void format_posts::flush()
-{
+void format_posts::flush() {
   report.output_stream.flush();
 }
 
-void format_posts::operator()(post_t& post)
-{
-  if (! post.has_xdata() ||
-      ! post.xdata().has_flags(POST_EXT_DISPLAYED)) {
+void format_posts::operator()(post_t& post) {
+  if (!post.has_xdata() || !post.xdata().has_flags(POST_EXT_DISPLAYED)) {
     std::ostream& out(report.output_stream);
 
     bind_scope_t bound_scope(report, post);
 
-    if (! report_title.empty()) {
+    if (!report_title.empty()) {
       if (first_report_title)
         first_report_title = false;
       else
@@ -105,6 +99,7 @@ void format_posts::operator()(post_t& post)
       out << prepend_format(bound_scope);
     }
 
+    // NOLINTBEGIN(bugprone-branch-clone)
     if (last_xact != post.xact) {
       if (last_xact) {
         bind_scope_t xact_scope(report, *last_xact);
@@ -112,40 +107,36 @@ void format_posts::operator()(post_t& post)
       }
       out << first_line_format(bound_scope);
       last_xact = post.xact;
-    }
-    else if (last_post && last_post->date() != post.date()) {
+    } else if (last_post && last_post->date() != post.date()) {
       out << first_line_format(bound_scope);
-    }
-    else {
+    } else {
       out << next_lines_format(bound_scope);
     }
+    // NOLINTEND(bugprone-branch-clone)
 
     post.xdata().add_flags(POST_EXT_DISPLAYED);
     last_post = &post;
   }
 }
 
-format_accounts::format_accounts(report_t&               _report,
-                                 const string&           format,
+format_accounts::format_accounts(report_t& _report, const string& format,
                                  const optional<string>& _prepend_format,
-                                 std::size_t             _prepend_width)
-  : report(_report), prepend_width(_prepend_width), disp_pred(),
-    first_report_title(true)
-{
-  const char * f = format.c_str();
+                                 std::size_t _prepend_width)
+    : report(_report), prepend_width(_prepend_width), disp_pred(), first_report_title(true) {
+  const char* f = format.c_str();
 
-  if (const char * p = std::strstr(f, "%/")) {
-    account_line_format.parse_format
-      (string(f, 0, static_cast<std::string::size_type>(p - f)));
-    const char * n = p + 2;
-    if (const char * pp = std::strstr(n, "%/")) {
-      total_line_format.parse_format
-        (string(n, 0, static_cast<std::string::size_type>(pp - n)),
-         account_line_format);
+  if (const char* p = std::strstr(f, "%/")) {
+    account_line_format.parse_format(string(f, static_cast<std::string::size_type>(p - f)));
+    const char* n = p + 2;
+    // NOLINTBEGIN(bugprone-branch-clone)
+    if (const char* pp = std::strstr(n, "%/")) {
+      total_line_format.parse_format(string(n, static_cast<std::string::size_type>(pp - n)),
+                                     account_line_format);
       separator_format.parse_format(string(pp + 2), account_line_format);
     } else {
       total_line_format.parse_format(n, account_line_format);
     }
+    // NOLINTEND(bugprone-branch-clone)
   } else {
     account_line_format.parse_format(format);
     total_line_format.parse_format(format, account_line_format);
@@ -157,13 +148,12 @@ format_accounts::format_accounts(report_t&               _report,
   TRACE_CTOR(format_accounts, "report&, const string&");
 }
 
-std::size_t format_accounts::post_account(account_t& account, const bool flat)
-{
-  if (! flat && account.parent)
+std::size_t format_accounts::post_account(account_t& account, const bool flat) {
+  if (!flat && account.parent)
     post_account(*account.parent, flat);
 
   if (account.xdata().has_flags(ACCOUNT_EXT_TO_DISPLAY) &&
-      ! account.xdata().has_flags(ACCOUNT_EXT_DISPLAYED)) {
+      !account.xdata().has_flags(ACCOUNT_EXT_DISPLAYED)) {
     std::ostream& out(report.output_stream);
 
     DEBUG("account.display", "Displaying account: " << account.fullname());
@@ -171,7 +161,7 @@ std::size_t format_accounts::post_account(account_t& account, const bool flat)
 
     bind_scope_t bound_scope(report, account);
 
-    if (! report_title.empty()) {
+    if (!report_title.empty()) {
       if (first_report_title)
         first_report_title = false;
       else
@@ -197,16 +187,15 @@ std::size_t format_accounts::post_account(account_t& account, const bool flat)
   return 0;
 }
 
-std::pair<std::size_t, std::size_t>
-format_accounts::mark_accounts(account_t& account, const bool flat)
-{
-  std::size_t visited    = 0;
+std::pair<std::size_t, std::size_t> format_accounts::mark_accounts(account_t& account,
+                                                                   const bool flat) {
+  std::size_t visited = 0;
   std::size_t to_display = 0;
 
-  foreach (accounts_map::value_type& pair, account.accounts) {
-    std::pair<std::size_t, std::size_t> i = mark_accounts(*pair.second, flat);
-    visited    += i.first;
-    to_display += i.second;
+  for (accounts_map::value_type& pair : account.accounts) {
+    auto [child_visited, child_to_display] = mark_accounts(*pair.second, flat);
+    visited += child_visited;
+    to_display += child_to_display;
   }
 
 #if DEBUG_ON
@@ -214,19 +203,15 @@ format_accounts::mark_accounts(account_t& account, const bool flat)
   if (account.has_xflags(ACCOUNT_EXT_VISITED))
     DEBUG("account.display", "  it was visited itself");
   DEBUG("account.display", "  it has " << visited << " visited children");
-  DEBUG("account.display",
-        "  it has " << to_display << " children to display");
+  DEBUG("account.display", "  it has " << to_display << " children to display");
 #endif
 
-  if (account.parent &&
-      (account.has_xflags(ACCOUNT_EXT_VISITED) || (! flat && visited > 0))) {
+  if (account.parent && (account.has_xflags(ACCOUNT_EXT_VISITED) || (!flat && visited > 0))) {
     bind_scope_t bound_scope(report, account);
     call_scope_t call_scope(bound_scope);
-    if ((! flat && to_display > 1) ||
-        ((flat || to_display != 1 ||
-          account.has_xflags(ACCOUNT_EXT_VISITED)) &&
-         (report.HANDLED(empty) ||
-          report.display_value(report.fn_display_total(call_scope))) &&
+    if ((!flat && to_display > 1) || (!flat && to_display == 1 && !account.posts.empty()) ||
+        ((flat || to_display != 1 || account.has_xflags(ACCOUNT_EXT_VISITED)) &&
+         (report.HANDLED(empty) || report.display_value(report.fn_display_total(call_scope))) &&
          disp_pred(bound_scope))) {
       account.xdata().add_flags(ACCOUNT_EXT_TO_DISPLAY);
       DEBUG("account.display", "Marking account as TO_DISPLAY");
@@ -238,13 +223,11 @@ format_accounts::mark_accounts(account_t& account, const bool flat)
   return std::pair<std::size_t, std::size_t>(visited, to_display);
 }
 
-void format_accounts::flush()
-{
+void format_accounts::flush() {
   std::ostream& out(report.output_stream);
 
   if (report.HANDLED(display_)) {
-    DEBUG("account.display",
-          "Account display predicate: " << report.HANDLER(display_).str());
+    DEBUG("account.display", "Account display predicate: " << report.HANDLER(display_).str());
     disp_pred.parse(report.HANDLER(display_).str());
   }
 
@@ -252,19 +235,17 @@ void format_accounts::flush()
 
   std::size_t displayed = 0;
 
-  foreach (account_t * account, posted_accounts)
+  for (account_t* account : posted_accounts)
     displayed += post_account(*account, report.HANDLED(flat));
 
-  if (displayed > 1 &&
-      ! report.HANDLED(no_total) && ! report.HANDLED(percent)) {
+  if (displayed > 1 && !report.HANDLED(no_total) && !report.HANDLED(percent)) {
     bind_scope_t bound_scope(report, *report.session.journal->master);
     out << separator_format(bound_scope);
 
     if (prepend_format) {
       static_cast<std::ostream&>(report.output_stream)
-        .width(static_cast<std::streamsize>(prepend_width));
-      static_cast<std::ostream&>(report.output_stream)
-        << prepend_format(bound_scope);
+          .width(static_cast<std::streamsize>(prepend_width));
+      static_cast<std::ostream&>(report.output_stream) << prepend_format(bound_scope);
     }
 
     out << total_line_format(bound_scope);
@@ -273,27 +254,38 @@ void format_accounts::flush()
   out.flush();
 }
 
-void format_accounts::operator()(account_t& account)
-{
+void format_accounts::operator()(account_t& account) {
   DEBUG("account.display", "Posting account: " << account.fullname());
   posted_accounts.push_back(&account);
 }
 
-void report_accounts::flush()
-{
-  std::ostream& out(report.output_stream);
-  format_t      prepend_format;
-  std::size_t   prepend_width;
-  bool          do_prepend_format;
+namespace {
+void collect_known_accounts(account_t& account, report_accounts::accounts_report_map& accounts) {
+  if (account.has_flags(ACCOUNT_KNOWN) && accounts.find(&account) == accounts.end())
+    accounts.insert(report_accounts::accounts_report_map::value_type(&account, 0));
 
-  if ((do_prepend_format = report.HANDLED(prepend_format_))) {
+  for (accounts_map::value_type& pair : account.accounts)
+    collect_known_accounts(*pair.second, accounts);
+}
+} // namespace
+
+void report_accounts::flush() {
+  std::ostream& out(report.output_stream);
+  format_t prepend_format;
+  std::size_t prepend_width = 0;
+  bool do_prepend_format;
+
+  do_prepend_format = report.HANDLED(prepend_format_);
+  if (do_prepend_format) {
     prepend_format.parse_format(report.HANDLER(prepend_format_).str());
     prepend_width = report.HANDLED(prepend_width_)
-      ? lexical_cast<std::size_t>(report.HANDLER(prepend_width_).str())
-      : 0;
+                        ? lexical_cast<std::size_t>(report.HANDLER(prepend_width_).str())
+                        : 0;
   }
 
-  foreach (accounts_pair& entry, accounts) {
+  collect_known_accounts(*report.session.journal->master, accounts);
+
+  for (accounts_pair& entry : accounts) {
     if (do_prepend_format) {
       bind_scope_t bound_scope(report, *entry.first);
       out.width(static_cast<std::streamsize>(prepend_width));
@@ -306,87 +298,75 @@ void report_accounts::flush()
   }
 }
 
-void report_accounts::operator()(post_t& post)
-{
-  accounts_report_map::iterator i = accounts.find(post.account);
-  if (i == accounts.end())
+void report_accounts::operator()(post_t& post) {
+  if (auto i = accounts.find(post.account); i == accounts.end())
     accounts.insert(accounts_pair(post.account, 1));
   else
     (*i).second++;
 }
 
-void report_payees::flush()
-{
+void report_payees::flush() {
   std::ostream& out(report.output_stream);
 
-  foreach (payees_pair& entry, payees) {
+  for (payees_pair& entry : payees) {
     if (report.HANDLED(count))
       out << entry.second << ' ';
     out << entry.first << '\n';
   }
 }
 
-void report_payees::operator()(post_t& post)
-{
-  std::map<string, std::size_t>::iterator i = payees.find(post.payee());
-  if (i == payees.end())
+void report_payees::operator()(post_t& post) {
+  if (auto i = payees.find(post.payee()); i == payees.end())
     payees.insert(payees_pair(post.payee(), 1));
   else
     (*i).second++;
 }
 
-void report_tags::flush()
-{
+void report_tags::flush() {
   std::ostream& out(report.output_stream);
 
-  foreach (tags_pair& entry, tags) {
+  for (tags_pair& entry : tags) {
     if (report.HANDLED(count))
       out << entry.second << ' ';
     out << entry.first << '\n';
   }
 }
 
-void report_tags::gather_metadata(item_t& item)
-{
-  if (! item.metadata)
+void report_tags::gather_metadata(item_t& item) {
+  if (!item.metadata)
     return;
-  foreach (const item_t::string_map::value_type& data, *item.metadata) {
+  for (const item_t::string_map::value_type& data : *item.metadata) {
     string tag(data.first);
     if (report.HANDLED(values) && data.second.first)
-      tag += ": " + data.second.first.get().to_string();
+      tag += ": " + data.second.first->to_string();
 
-    std::map<string, std::size_t>::iterator i = tags.find(tag);
-    if (i == tags.end())
+    if (auto i = tags.find(tag); i == tags.end())
       tags.insert(tags_pair(tag, 1));
     else
       (*i).second++;
   }
 }
 
-void report_tags::operator()(post_t& post)
-{
+void report_tags::operator()(post_t& post) {
   gather_metadata(*post.xact);
   gather_metadata(post);
 }
 
-void report_commodities::flush()
-{
+void report_commodities::flush() {
   std::ostream& out(report.output_stream);
 
-  foreach (commodities_pair& entry, commodities) {
+  for (commodities_pair& entry : commodities) {
     if (report.HANDLED(count))
       out << entry.second << ' ';
     out << *entry.first << '\n';
   }
 }
 
-void report_commodities::operator()(post_t& post)
-{
+void report_commodities::operator()(post_t& post) {
   amount_t temp(post.amount.strip_annotations(report.what_to_keep()));
   commodity_t& comm(temp.commodity());
 
-  commodities_report_map::iterator i = commodities.find(&comm);
-  if (i == commodities.end())
+  if (auto i = commodities.find(&comm); i == commodities.end())
     commodities.insert(commodities_pair(&comm, 1));
   else
     (*i).second++;
@@ -394,11 +374,8 @@ void report_commodities::operator()(post_t& post)
   if (comm.has_annotation()) {
     annotated_commodity_t& ann_comm(as_annotated_commodity(comm));
     if (ann_comm.details.price) {
-      commodities_report_map::iterator ii =
-        commodities.find(&ann_comm.details.price->commodity());
-      if (ii == commodities.end())
-        commodities.insert
-          (commodities_pair(&ann_comm.details.price->commodity(), 1));
+      if (auto ii = commodities.find(&ann_comm.details.price->commodity()); ii == commodities.end())
+        commodities.insert(commodities_pair(&ann_comm.details.price->commodity(), 1));
       else
         (*ii).second++;
     }
@@ -406,8 +383,7 @@ void report_commodities::operator()(post_t& post)
 
   if (post.cost) {
     amount_t temp_cost(post.cost->strip_annotations(report.what_to_keep()));
-    i = commodities.find(&temp_cost.commodity());
-    if (i == commodities.end())
+    if (auto i = commodities.find(&temp_cost.commodity()); i == commodities.end())
       commodities.insert(commodities_pair(&temp_cost.commodity(), 1));
     else
       (*i).second++;

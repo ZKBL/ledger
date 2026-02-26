@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,9 +37,8 @@
 
 namespace ledger {
 
-void xacts_iterator::reset(journal_t& journal)
-{
-  xacts_i   = journal.xacts.begin();
+void xacts_iterator::reset(journal_t& journal) {
+  xacts_i = journal.xacts.begin();
   xacts_end = journal.xacts.end();
 
   xacts_uninitialized = false;
@@ -47,167 +46,159 @@ void xacts_iterator::reset(journal_t& journal)
   increment();
 }
 
-void xacts_iterator::increment()
-{
+void xacts_iterator::increment() {
   if (xacts_i != xacts_end)
     m_node = *xacts_i++;
   else
-    m_node = NULL;
+    m_node = nullptr;
 }
 
-void journal_posts_iterator::reset(journal_t& journal)
-{
+void journal_posts_iterator::reset(journal_t& journal) {
   xacts.reset(journal);
   increment();
 }
 
-void journal_posts_iterator::increment()
-{
-  if (post_t * post = *posts++) {
+void journal_posts_iterator::increment() {
+  // NOLINTBEGIN(bugprone-branch-clone)
+  if (post_t* post = *posts++) {
     m_node = post;
-  }
-  else if (xact_t * xact = *xacts++) {
+  } else if (xact_t* xact = *xacts++) {
     posts.reset(*xact);
     m_node = *posts++;
+  } else {
+    m_node = nullptr;
   }
-  else {
-    m_node = NULL;
-  }
+  // NOLINTEND(bugprone-branch-clone)
 }
 
 namespace {
-  struct create_price_xact
-  {
-    journal_t&     journal;
-    account_t *    account;
-    temporaries_t& temps;
-    xacts_list&    xact_temps;
+struct create_price_xact {
+  journal_t& journal;
+  account_t* account;
+  temporaries_t& temps;
+  xacts_list& xact_temps;
 
-    std::map<string, xact_t *> xacts_by_commodity;
+  std::map<string, xact_t*> xacts_by_commodity;
 
-    create_price_xact(journal_t& _journal, account_t * _account,
-                      temporaries_t& _temps, xacts_list& _xact_temps)
-      : journal(_journal), account(_account), temps(_temps),
-        xact_temps(_xact_temps) {
-      TRACE_CTOR(create_price_xact,
-                 "journal_t&, account_t *, temporaries_t&, xacts_list&");
+  create_price_xact(journal_t& _journal, account_t* _account, temporaries_t& _temps,
+                    xacts_list& _xact_temps)
+      : journal(_journal), account(_account), temps(_temps), xact_temps(_xact_temps) {
+    TRACE_CTOR(create_price_xact, "journal_t&, account_t *, temporaries_t&, xacts_list&");
+  }
+  ~create_price_xact() noexcept { TRACE_DTOR(create_price_xact); }
+
+  void operator()(const datetime_t& date, const amount_t& price) {
+    xact_t* xact;
+    string symbol = price.commodity().symbol();
+
+    if (auto i = xacts_by_commodity.find(symbol); i != xacts_by_commodity.end()) {
+      xact = (*i).second;
+    } else {
+      xact = &temps.create_xact();
+      xact_temps.push_back(xact);
+      xact->payee = symbol;
+      xact->_date = date.date();
+      xact->_state = item_t::CLEARED;
+      xacts_by_commodity.insert(std::pair<string, xact_t*>(symbol, xact));
+      xact->journal = &journal;
     }
-    ~create_price_xact() throw() {
-      TRACE_DTOR(create_price_xact);
-    }
 
-    void operator()(const datetime_t& date, const amount_t& price) {
-      xact_t * xact;
-      string   symbol = price.commodity().symbol();
+    bool post_already_exists = false;
 
-      std::map<string, xact_t *>::iterator i =
-        xacts_by_commodity.find(symbol);
-      if (i != xacts_by_commodity.end()) {
-        xact = (*i).second;
-      } else {
-        xact = &temps.create_xact();
-        xact_temps.push_back(xact);
-        xact->payee = symbol;
-        xact->_date = date.date();
-        xacts_by_commodity.insert
-          (std::pair<string, xact_t *>(symbol, xact));
-        xact->journal = &journal;
-      }
-
-      bool post_already_exists = false;
-
-      foreach (post_t * post, xact->posts) {
-        if (post->date() == date.date() && post->amount == price) {
-          post_already_exists = true;
-          break;
-        }
-      }
-
-      if (! post_already_exists) {
-        post_t& temp = temps.create_post(*xact, account);
-        temp._date  = date.date();
-        temp.amount = price;
-
-        temp.xdata().datetime = date;
+    for (post_t* post : xact->posts) {
+      if (post->date() == date.date() && post->amount == price) {
+        post_already_exists = true;
+        break;
       }
     }
-  };
-}
 
-void posts_commodities_iterator::reset(journal_t& journal)
-{
+    if (!post_already_exists) {
+      post_t& temp = temps.create_post(*xact, account);
+      temp._date = date.date();
+      temp.amount = price;
+      temp._state = item_t::CLEARED;
+
+      temp.xdata().datetime = date;
+    }
+  }
+};
+} // namespace
+
+void posts_commodities_iterator::reset(journal_t& journal) {
   journal_posts.reset(journal);
 
-  std::set<commodity_t *> commodities;
+  struct commodity_symbol_compare {
+    bool operator()(const commodity_t* a, const commodity_t* b) const {
+      return a->symbol() < b->symbol();
+    }
+  };
+  std::set<commodity_t*, commodity_symbol_compare> commodities;
 
-  while (const post_t * post = *journal_posts++) {
+  while (const post_t* post = *journal_posts++) {
     commodity_t& comm(post->amount.commodity());
     if (comm.flags() & COMMODITY_NOMARKET)
       continue;
     commodities.insert(&comm.referent());
   }
 
-  foreach (commodity_t * comm, commodities)
-    comm->map_prices
-      (create_price_xact(journal, journal.master->find_account(comm->symbol()),
-                         temps, xact_temps));
+  for (commodity_t* comm : commodities)
+    comm->map_prices(create_price_xact(journal, journal.master->find_account(comm->symbol()), temps,
+                                       xact_temps));
+
+  // Sort transactions by date to ensure deterministic output
+  xact_temps.sort([](const xact_t* a, const xact_t* b) { return a->date() < b->date(); });
 
   xacts.reset(xact_temps.begin(), xact_temps.end());
 
   increment();
 }
 
-void posts_commodities_iterator::increment()
-{
-  if (post_t * post = *posts++) {
+void posts_commodities_iterator::increment() {
+  // NOLINTBEGIN(bugprone-branch-clone)
+  if (post_t* post = *posts++) {
     m_node = post;
-  }
-  else if (xact_t * xact = *xacts++) {
+  } else if (xact_t* xact = *xacts++) {
     posts.reset(*xact);
     m_node = *posts++;
+  } else {
+    m_node = nullptr;
   }
-  else {
-    m_node = NULL;
-  }
+  // NOLINTEND(bugprone-branch-clone)
 }
 
-void basic_accounts_iterator::increment()
-{
-  while (! accounts_i.empty() && accounts_i.back() == accounts_end.back()) {
+void basic_accounts_iterator::increment() {
+  while (!accounts_i.empty() && accounts_i.back() == accounts_end.back()) {
     accounts_i.pop_back();
     accounts_end.pop_back();
   }
 
   if (accounts_i.empty()) {
-    m_node = NULL;
+    m_node = nullptr;
   } else {
-    account_t * account = (*(accounts_i.back()++)).second;
+    account_t* account = (*(accounts_i.back()++)).second;
     assert(account);
 
     // If this account has children, queue them up to be iterated next.
-    if (! account->accounts.empty())
+    if (!account->accounts.empty())
       push_back(*account);
 
     m_node = account;
   }
 }
 
-void sorted_accounts_iterator::push_back(account_t& account)
-{
+void sorted_accounts_iterator::push_back(account_t& account) {
   accounts_list.push_back(accounts_deque_t());
 
   if (flatten_all) {
     push_all(account, accounts_list.back());
 
-    std::stable_sort(accounts_list.back().begin(),
-                     accounts_list.back().end(),
+    std::stable_sort(accounts_list.back().begin(), accounts_list.back().end(),
                      compare_items<account_t>(sort_cmp, report));
 
 #if DEBUG_ON
     if (SHOW_DEBUG("account.sorted")) {
-      foreach (account_t * acct, accounts_list.back())
-        DEBUG("account.sorted",
-              "Account (flat): " << acct->fullname());
+      for (account_t* acct : accounts_list.back())
+        DEBUG("account.sorted", "Account (flat): " << acct->fullname());
     }
 #endif
   } else {
@@ -218,50 +209,43 @@ void sorted_accounts_iterator::push_back(account_t& account)
   sorted_accounts_end.push_back(accounts_list.back().end());
 }
 
-void sorted_accounts_iterator::push_all(account_t& account,
-                                        accounts_deque_t& deque)
-{
-  foreach (accounts_map::value_type& pair, account.accounts) {
+void sorted_accounts_iterator::push_all(account_t& account, accounts_deque_t& deque) {
+  for (accounts_map::value_type& pair : account.accounts) {
     deque.push_back(pair.second);
     push_all(*pair.second, deque);
   }
 }
 
-void sorted_accounts_iterator::sort_accounts(account_t& account,
-                                             accounts_deque_t& deque)
-{
-  foreach (accounts_map::value_type& pair, account.accounts)
+void sorted_accounts_iterator::sort_accounts(account_t& account, accounts_deque_t& deque) {
+  for (accounts_map::value_type& pair : account.accounts)
     deque.push_back(pair.second);
 
-  std::stable_sort(deque.begin(), deque.end(),
-                   compare_items<account_t>(sort_cmp, report));
+  std::stable_sort(deque.begin(), deque.end(), compare_items<account_t>(sort_cmp, report));
 
 #if DEBUG_ON
   if (SHOW_DEBUG("account.sorted")) {
-    foreach (account_t * acct, deque)
+    for (account_t* acct : deque)
       DEBUG("account.sorted", "Account: " << acct->fullname());
   }
 #endif
 }
 
-void sorted_accounts_iterator::increment()
-{
-  while (! sorted_accounts_i.empty() &&
-         sorted_accounts_i.back() == sorted_accounts_end.back()) {
+void sorted_accounts_iterator::increment() {
+  while (!sorted_accounts_i.empty() && sorted_accounts_i.back() == sorted_accounts_end.back()) {
     sorted_accounts_i.pop_back();
     sorted_accounts_end.pop_back();
-    assert(! accounts_list.empty());
+    assert(!accounts_list.empty());
     accounts_list.pop_back();
   }
 
   if (sorted_accounts_i.empty()) {
-    m_node = NULL;
+    m_node = nullptr;
   } else {
-    account_t * account = *sorted_accounts_i.back()++;
+    account_t* account = *sorted_accounts_i.back()++;
     assert(account);
 
     // If this account has children, queue them up to be iterated next.
-    if (! flatten_all && ! account->accounts.empty())
+    if (!flatten_all && !account->accounts.empty())
       push_back(*account);
 
     // Make sure the sorting value gets recalculated for this account

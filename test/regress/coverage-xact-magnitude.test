@@ -1,0 +1,20 @@
+; Coverage test for xact.cc: magnitude() and code accessor
+; Exercises xact.cc line 603: magnitude lookup
+; and xact.h lines 84, 92-100: code and description accessors
+
+2024/01/01 (CHK001) Grocery Store
+    Expenses:Food    $25.00
+    Assets:Checking
+
+2024/01/02 Gas Station
+    Expenses:Gas    $40.00
+    Assets:Checking
+
+test reg Expenses:Food --format '%(xact.payee) %(xact.code) %(amount)\n' -> 0
+Grocery Store CHK001 $25.00
+end test
+
+test reg Expenses --format '%(xact.magnitude)\n' -> 0
+$25.00
+$40.00
+end test

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,7 @@
  *
  * @ingroup report
  */
-#ifndef INCLUDED_DRAFT_H
-#define INCLUDED_DRAFT_H
+#pragma once
 
 #include "exprbase.h"
 #include "value.h"
@@ -50,49 +49,37 @@ namespace ledger {
 class journal_t;
 class xact_t;
 
-class draft_t : public expr_base_t<value_t>
-{
-  typedef expr_base_t<value_t> base_type;
+class draft_t : public expr_base_t<value_t> {
+  using base_type = expr_base_t<value_t>;
 
-  struct xact_template_t
-  {
+  struct xact_template_t {
     optional<date_t> date;
+    optional<string> date_string;
     optional<string> code;
     optional<string> note;
-    mask_t           payee_mask;
+    mask_t payee_mask;
 
     struct post_template_t {
-      bool               from;
-      optional<mask_t>   account_mask;
+      bool from;
+      optional<mask_t> account_mask;
       optional<amount_t> amount;
-      optional<string>   cost_operator;
+      optional<string> cost_operator;
       optional<amount_t> cost;
 
-      post_template_t() : from(false) {
-        TRACE_CTOR(post_template_t, "");
-      }
-      ~post_template_t() throw() {
-        TRACE_DTOR(post_template_t);
-      }
+      post_template_t() : from(false) { TRACE_CTOR(post_template_t, ""); }
+      ~post_template_t() noexcept { TRACE_DTOR(post_template_t); }
     };
 
     std::list<post_template_t> posts;
 
-    xact_template_t() {
-      TRACE_CTOR(xact_template_t, "");
-    }
+    xact_template_t() { TRACE_CTOR(xact_template_t, ""); }
     xact_template_t(const xact_template_t& other)
-      : date(other.date),
-        code(other.code),
-        note(other.note),
-        payee_mask(other.payee_mask),
-        posts(other.posts)
-    {
+        : date(other.date), date_string(other.date_string), code(other.code), note(other.note),
+          payee_mask(other.payee_mask), posts(other.posts) {
       TRACE_CTOR(xact_template_t, "copy");
     }
-    ~xact_template_t() throw() {
-      TRACE_DTOR(xact_template_t);
-    }
+    xact_template_t& operator=(const xact_template_t&) = default;
+    ~xact_template_t() noexcept { TRACE_DTOR(xact_template_t); }
 
     void dump(std::ostream& out) const;
   };
@@ -101,24 +88,22 @@ class draft_t : public expr_base_t<value_t>
 
 public:
   draft_t(const value_t& args) : base_type() {
-    if (! args.empty())
+    if (!args.empty())
       parse_args(args);
     TRACE_CTOR(draft_t, "value_t");
   }
-  virtual ~draft_t() throw() {
-    TRACE_DTOR(draft_t);
-  }
+  ~draft_t() noexcept override { TRACE_DTOR(draft_t); }
 
   void parse_args(const value_t& args);
 
-  virtual result_type real_calc(scope_t&) {
+  result_type real_calc(scope_t&) override {
     assert(false);
     return true;
   }
 
-  xact_t * insert(journal_t& journal);
+  xact_t* insert(journal_t& journal);
 
-  virtual void dump(std::ostream& out) const {
+  void dump(std::ostream& out) const override {
     if (tmpl)
       tmpl->dump(out);
   }
@@ -128,5 +113,3 @@ value_t xact_command(call_scope_t& args);
 value_t template_command(call_scope_t& args);
 
 } // namespace ledger
-
-#endif // INCLUDED_DRAFT_H

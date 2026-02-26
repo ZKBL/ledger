@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -51,55 +51,69 @@
  * | draft_t     | Partially filled xacts     | xact_t *        |             |
  * | format_t    | Format strings             | string          |             |
  */
-#ifndef INCLUDED_EXPRBASE_H
-#define INCLUDED_EXPRBASE_H
+#pragma once
 
 #include "utils.h"
 #include "amount.h"
 
 namespace ledger {
 
-DECLARE_EXCEPTION(parse_error, std::runtime_error);
-DECLARE_EXCEPTION(compile_error, std::runtime_error);
-DECLARE_EXCEPTION(calc_error, std::runtime_error);
-DECLARE_EXCEPTION(usage_error, std::runtime_error);
+class parse_error : public std::runtime_error {
+public:
+  explicit parse_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~parse_error() noexcept override {}
+};
+class compile_error : public std::runtime_error {
+public:
+  explicit compile_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~compile_error() noexcept override {}
+};
+class calc_error : public std::runtime_error {
+public:
+  explicit calc_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~calc_error() noexcept override {}
+};
+class recursion_error : public std::runtime_error {
+public:
+  explicit recursion_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~recursion_error() noexcept override {}
+};
+class usage_error : public std::runtime_error {
+public:
+  explicit usage_error(const string& why) noexcept : std::runtime_error(why) {}
+  ~usage_error() noexcept override {}
+};
 
 class scope_t;
 class call_scope_t;
 
 template <typename ResultType>
-class expr_base_t
-{
+class expr_base_t {
 public:
-  typedef ResultType result_type;
+  using result_type = ResultType;
 
-  typedef function<result_type (call_scope_t&)> func_t;
+  using func_t = function<result_type(call_scope_t&)>;
 
 protected:
-  scope_t * context;
-  string    str;
-  bool      compiled;
+  scope_t* context;
+  string str;
+  bool compiled;
 
   virtual result_type real_calc(scope_t& scope) = 0;
 
 public:
-  expr_base_t(const expr_base_t& other)
-    : context(other.context), str(other.str), compiled(false) {
+  expr_base_t(const expr_base_t& other) : context(other.context), str(other.str), compiled(false) {
     TRACE_CTOR(expr_base_t, "copy");
   }
-  expr_base_t(scope_t * _context = NULL)
-    : context(_context), compiled(false)
-  {
+  expr_base_t(scope_t* _context = nullptr) : context(_context), compiled(false) {
     TRACE_CTOR(expr_base_t, "scope_t *");
   }
-  virtual ~expr_base_t() {
-    TRACE_DTOR(expr_base_t);
-  }
+  virtual ~expr_base_t() { TRACE_DTOR(expr_base_t); }
 
   expr_base_t& operator=(const expr_base_t& _expr) {
     if (this != &_expr) {
-      str      = _expr.str;
-      context  = _expr.context;
+      str = _expr.str;
+      context = _expr.context;
       compiled = _expr.compiled;
     }
     return *this;
@@ -109,32 +123,24 @@ public:
     return *this;
   }
 
-  virtual operator bool() const throw() {
-    return ! str.empty();
-  }
+  virtual operator bool() const noexcept { return !str.empty(); }
 
-  virtual string text() const throw() {
-    return str;
-  }
+  virtual string text() const noexcept { return str; }
   void set_text(const string& txt) {
-    str      = txt;
+    str = txt;
     compiled = false;
   }
 
-  void parse(const string& expr_str,
-             const parse_flags_t& flags = PARSE_DEFAULT) {
-    std::istringstream stream(expr_str);
+  void parse(const string& expr_str, const parse_flags_t& flags = PARSE_DEFAULT) {
+    std::istringstream stream(expr_str); // NOLINT(bugprone-unused-local-non-trivial-variable)
     return parse(stream, flags, expr_str);
   }
-  virtual void parse(std::istream&,
-                     const parse_flags_t& = PARSE_DEFAULT,
+  virtual void parse(std::istream&, const parse_flags_t& = PARSE_DEFAULT,
                      const optional<string>& original_string = none) {
     set_text(original_string ? *original_string : "<stream>");
   }
 
-  virtual void mark_uncompiled() {
-    compiled = false;
-  }
+  virtual void mark_uncompiled() { compiled = false; }
 
   void recompile(scope_t& scope) {
     compiled = false;
@@ -142,20 +148,31 @@ public:
   }
 
   virtual void compile(scope_t& scope) {
-    if (! compiled) {
-      // Derived classes need to do something here.
-      context  = &scope;
+    if (!compiled) {
+      // Only set context from compile() if it hasn't been explicitly
+      // set (e.g. via set_context()).  Many callers pass a
+      // stack-allocated bind_scope_t as 'scope'; storing that pointer
+      // would create a dangling reference once the caller returns.
+      // Contexts set via set_context() point to long-lived scopes
+      // (such as report_t) and must not be overwritten.
+      if (!context)
+        context = &scope;
       compiled = true;
     }
   }
 
-  result_type operator()(scope_t& scope) {
-    return calc(scope);
-  }
+  result_type operator()(scope_t& scope) { return calc(scope); }
 
-  result_type calc(scope_t& scope)
-  {
-    if (! compiled) {
+  result_type calc(scope_t& scope) {
+    if (!compiled) {
+      // Save context before compile: the scope argument is often a
+      // stack-allocated bind_scope_t that will be destroyed when the
+      // caller returns.  compile() (or a derived override) may store
+      // &scope into context, creating a dangling pointer.  By
+      // restoring the saved context afterwards we ensure that any
+      // long-lived context set via set_context() is preserved.
+      scope_t* saved_context = context;
+
 #if DEBUG_ON
       if (SHOW_DEBUG("expr.compile")) {
         DEBUG("expr.compile", "Before compilation:");
@@ -172,6 +189,9 @@ public:
         dump(*_log_stream);
       }
 #endif // DEBUG_ON
+
+      if (saved_context)
+        context = saved_context;
     }
 
     DEBUG("expr.calc", "Calculating: " << str);
@@ -183,16 +203,10 @@ public:
     return calc(*context);
   }
 
-  scope_t * get_context() {
-    return context;
-  }
-  void set_context(scope_t * scope) {
-    context = scope;
-  }
+  scope_t* get_context() { return context; }
+  void set_context(scope_t* scope) { context = scope; }
 
-  virtual string context_to_str() const {
-    return empty_string;
-  }
+  virtual string context_to_str() const { return empty_string; }
 
   string print_to_str() const {
     std::ostringstream out;
@@ -214,32 +228,29 @@ public:
   virtual void dump(std::ostream&) const {}
 
   result_type preview(std::ostream& out, scope_t& scope) const {
-    out << _("--- Input expression ---") << std::endl;
-    out << text() << std::endl;
+    out << _("--- Input expression ---") << '\n';
+    out << text() << '\n';
 
-    out << std::endl << _("--- Text as parsed ---") << std::endl;
+    out << '\n' << _("--- Text as parsed ---") << '\n';
     print(out);
-    out << std::endl;
+    out << '\n';
 
-    out << std::endl << _("--- Expression tree ---") << std::endl;
+    out << '\n' << _("--- Expression tree ---") << '\n';
     dump(out);
 
-    out << std::endl << _("--- Compiled tree ---") << std::endl;
+    out << '\n' << _("--- Compiled tree ---") << '\n';
     compile(scope);
     dump(out);
 
-    out << std::endl << _("--- Result value ---") << std::endl;
+    out << '\n' << _("--- Result value ---") << '\n';
     return calc();
   }
 };
 
 template <typename ResultType>
-std::ostream& operator<<(std::ostream& out,
-                         const expr_base_t<ResultType>& expr) {
+std::ostream& operator<<(std::ostream& out, const expr_base_t<ResultType>& expr) {
   expr.print(out);
   return out;
 }
 
 } // namespace ledger
-
-#endif // INCLUDED_EXPRBASE_H

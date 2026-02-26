@@ -1,0 +1,16 @@
+; Test xact.cc: auto_xact_t with format expression in account name (lines 867-874)
+; When an automated transaction's account name contains %(expr), it is
+; evaluated as a format string using the matched posting's context.
+
+= /Food/
+    (Budget:%(account))                 1
+
+2024/01/15 Grocery
+    Expenses:Food        $50.00
+    Assets:Checking
+
+test reg --args-only --columns=80
+24-Jan-15 Grocery               Expenses:Food                $50.00       $50.00
+                                Assets:Checking             $-50.00            0
+                                (Budget:Expenses:Food)       $50.00       $50.00
+end test

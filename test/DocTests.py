@@ -1,7 +1,5 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 
-from __future__ import print_function, unicode_literals
 from io import open
 
 import os
@@ -18,8 +16,8 @@ from difflib import unified_diff
 class DocTests:
   def __init__(self, args):
     scriptpath      = os.path.dirname(os.path.realpath(__file__))
-    self.ledger     = os.path.abspath(args.ledger)
-    self.sourcepath = os.path.abspath(args.file)
+    self.ledger     = os.path.realpath(args.ledger)
+    self.sourcepath = os.path.realpath(args.file)
     self.verbose    = args.verbose
     self.tests      = args.examples
 
@@ -123,12 +121,8 @@ class DocTests:
       else:
         return None
 
-    if sys.version_info.major == 2:
-      command = command.encode(locale.getpreferredencoding())
     command_parts = shlex.split(command)
-    command = filter(lambda x: x != '\n', command_parts)
-    if sys.version_info.major > 2:
-        command = list(command)
+    command = list(filter(lambda x: x != '\n', command_parts))
     if command[0] == '$': command.remove('$')
     index = command.index('ledger')
     command[index] = self.ledger

@@ -38,6 +38,7 @@
 #include <sstream>
 #include <cerrno>
 
+#include <gpgme.h>
 #include <gpgme++/context.h>
 #include <gpgme++/decryptionresult.h>
 
@@ -52,10 +53,8 @@ using std::unique_ptr;
 
 constexpr static unsigned int _bufsize = 4096;
 
-data_streambuffer_t::data_streambuffer_t(Data& _data) :
-  data(_data),
-  bufsize(_bufsize),
-  cbuf(unique_ptr<char[]>(new char[_bufsize])) {}
+data_streambuffer_t::data_streambuffer_t(Data& _data)
+    : data(_data), bufsize(_bufsize), cbuf(unique_ptr<char[]>(new char[_bufsize])) {}
 
 streambuf::int_type data_streambuffer_t::underflow() {
   if (this->gptr() == this->egptr()) {
@@ -69,18 +68,17 @@ streambuf::int_type data_streambuffer_t::underflow() {
 
     this->setg(buf, buf, buf + size);
   }
-  return this->gptr() == this->egptr()
-    ? char_traits<char>::eof()
-    : char_traits<char>::to_int_type(*this->gptr());
+  return this->gptr() == this->egptr() ? char_traits<char>::eof()
+                                       : char_traits<char>::to_int_type(*this->gptr());
 }
 
-streambuf::pos_type data_streambuffer_t::seekpos(streambuf::pos_type sp, ios_base::openmode which = ios_base::in) {
+streambuf::pos_type data_streambuffer_t::seekpos(streambuf::pos_type sp,
+                                                 ios_base::openmode which = ios_base::in) {
   return this->seekoff(static_cast<streambuf::off_type>(sp), ios::beg, which);
 }
 
-streambuf::pos_type data_streambuffer_t::seekoff(streambuf::off_type off,
-                                                 ios_base::seekdir   dir,
-                                                 ios_base::openmode  which = ios_base::in) {
+streambuf::pos_type data_streambuffer_t::seekoff(streambuf::off_type off, ios_base::seekdir dir,
+                                                 ios_base::openmode which = ios_base::in) {
   streamoff pos = -1;
   if (dir == ios::beg)
     pos = static_cast<streambuf::pos_type>(data.seek(static_cast<streamoff>(off), SEEK_SET));
@@ -94,34 +92,31 @@ streambuf::pos_type data_streambuffer_t::seekoff(streambuf::off_type off,
 
   auto buf = cbuf.get();
   // Trigger underflow on next read
-  this->setg(buf, buf+1, buf+1);
+  this->setg(buf, buf + 1, buf + 1);
   return pos;
 }
 
-FILE * decrypted_stream_t::open_file(const path& filename) {
-  FILE * f = fopen(filename.c_str(), "rb");
+FILE* decrypted_stream_t::open_file(const path& filename) {
+  FILE* f = fopen(filename.c_str(), "rb");
   if (!f)
     throw_(runtime_error, _f("Could not open file: %1%") % strerror(errno));
   return f;
 }
 
-shared_ptr<Data> decrypted_stream_t::setup_cipher_buffer(FILE * f) {
+shared_ptr<Data> decrypted_stream_t::setup_cipher_buffer(FILE* f) {
   auto enc_d = make_shared<Data>(f);
   if (!enc_d)
     throw runtime_error("Unable to create cipher text buffer");
 
-  if (enc_d->type() != Data::PGPEncrypted
-      && enc_d->type() != Data::CMSEncrypted
-      && enc_d->type() != Data::Unknown
-      && enc_d->type() != Data::Invalid)
+  if (enc_d->type() != Data::PGPEncrypted && enc_d->type() != Data::CMSEncrypted &&
+      enc_d->type() != Data::Unknown && enc_d->type() != Data::Invalid)
     throw_(runtime_error, _f("Unsupported encryption type: %1%") % enc_d->type());
 
   return enc_d;
 }
 
 static bool is_encrypted(shared_ptr<Data> enc_d) {
-  if (enc_d->type() == Data::Unknown
-      || enc_d->type() == Data::Invalid)
+  if (enc_d->type() == Data::Unknown || enc_d->type() == Data::Invalid)
     return false;
   else
     return true;
@@ -131,20 +126,11 @@ shared_ptr<Data> decrypted_stream_t::decrypt(shared_ptr<Data> enc_d) {
   unique_ptr<Context> ctx;
   shared_ptr<Data> dec_d;
 
-  if (enc_d->type() == Data::Unknown
-      || enc_d->type() == Data::Invalid) {
+  if (enc_d->type() == Data::Unknown || enc_d->type() == Data::Invalid) {
     ctx = nullptr;
     dec_d = enc_d;
   } else {
-#if GPGME_VERSION_NUMBER < 0x010d00
-    ctx = unique_ptr<Context>(Context::createForProtocol(enc_d->type() == Data::PGPEncrypted
-                                                          ? Protocol::OpenPGP
-                                                          : Protocol::CMS));
-#else
-    ctx = Context::create(enc_d->type() == Data::PGPEncrypted
-                          ? Protocol::OpenPGP
-                          : Protocol::CMS);
-#endif
+    ctx = Context::create(enc_d->type() == Data::PGPEncrypted ? Protocol::OpenPGP : Protocol::CMS);
     if (!ctx)
       throw runtime_error("Unable to establish decryption context");
 
@@ -155,7 +141,13 @@ shared_ptr<Data> decrypted_stream_t::decrypt(shared_ptr<Data> enc_d) {
 
     auto res = ctx->decrypt(*enc_d.get(), *dec_d.get());
     if (res.error())
-      throw_(runtime_error, _f("Decryption error: %1%: %2%") % res.error().source() % res.error().asString());
+      throw_(runtime_error, _f("Decryption error: %1%: %2%") % res.error().source() %
+#if GPGME_VERSION_NUMBER >= 0x011800
+                                res.error().asStdString()
+#else
+                                res.error().asString()
+#endif
+      );
   }
   return dec_d;
 }
@@ -163,17 +155,17 @@ shared_ptr<Data> decrypted_stream_t::decrypt(shared_ptr<Data> enc_d) {
 static inline void init_lib() {
   auto err = GpgME::initializeLibrary(0);
   if (err.code() != GPG_ERR_NO_ERROR)
-    throw_(runtime_error, _f("%1%: %2%") % err.source() % err.asString());
-}
-
-static inline void rewind(Data * d) {
-#if GPGME_VERSION_NUMBER < 0x010c00
-  d->seek(0, SEEK_SET);
+    throw_(runtime_error, _f("%1%: %2%") % err.source() %
+#if GPGME_VERSION_NUMBER >= 0x011800
+                              err.asStdString()
 #else
-  d->rewind();
+                              err.asString()
 #endif
+    );
 }
 
+// TODO: Change return type to std::unique_ptr<std::istream> and update
+// callers in error.cc and context.h to avoid returning a raw owning pointer.
 istream* decrypted_stream_t::open_stream(const path& filename) {
   init_lib();
 
@@ -181,38 +173,42 @@ istream* decrypted_stream_t::open_stream(const path& filename) {
   auto enc_d = setup_cipher_buffer(file.get());
   if (is_encrypted(enc_d)) {
     auto dec_d = decrypt(enc_d);
-    rewind(dec_d.get());
+    dec_d.get()->rewind();
     return new decrypted_stream_t(dec_d);
   }
   return new ifstream(filename);
 }
 
-decrypted_stream_t::decrypted_stream_t(path& filename)
-: istream(new data_streambuffer_t(*new Data())) {
+decrypted_stream_t::decrypted_stream_t(path& filename) : istream(nullptr), file(nullptr) {
   init_lib();
 
   file = open_file(filename);
+  std::unique_ptr<FILE, int (*)(FILE*)> file_guard(file, &fclose);
+
   auto enc_d = setup_cipher_buffer(file);
   dec_d = decrypt(enc_d);
-  rewind(dec_d.get());
+  dec_d.get()->rewind();
 
   if (is_encrypted(enc_d)) {
-    fclose(file);
+    file_guard.reset();
     file = nullptr;
+  } else {
+    file_guard.release(); // constructor succeeded, member takes ownership
   }
 
-  set_rdbuf(new data_streambuffer_t(*dec_d.get()));
+  rdbuf(new data_streambuffer_t(*dec_d.get()));
   clear();
 }
 
 decrypted_stream_t::decrypted_stream_t(shared_ptr<Data> dec_d)
-  : istream(new data_streambuffer_t(*dec_d.get())),
-    dec_d(dec_d),
-    file(nullptr) {
+    : istream(nullptr), dec_d(dec_d), file(nullptr) {
+  rdbuf(new data_streambuffer_t(*dec_d.get()));
   clear();
 }
 
 decrypted_stream_t::~decrypted_stream_t() {
+  auto* buf = rdbuf(nullptr); // disconnect first
+  delete buf;
   if (file)
     fclose(file);
 }

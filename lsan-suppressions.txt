@@ -1,0 +1,6 @@
+# LeakSanitizer (LSan) suppression file for known pre-existing leaks.
+# Used by CI sanitizer builds via LSAN_OPTIONS=suppressions=...
+#
+# Format: leak:<pattern>
+# Pattern is matched as a substring against symbolized stack frames.
+# See https://clang.llvm.org/docs/LeakSanitizer.html

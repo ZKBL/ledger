@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -43,54 +43,41 @@
  *
  * Long.
  */
-#ifndef INCLUDED_HISTORY_H
-#define INCLUDED_HISTORY_H
+#pragma once
 
 #include "amount.h"
 #include "commodity.h"
 
 namespace ledger {
 
-typedef std::map<datetime_t, amount_t> price_map_t;
+using price_map_t = std::map<datetime_t, amount_t>;
 
 class commodity_history_impl_t;
-class commodity_history_t : public noncopyable
-{
+class commodity_history_t : public noncopyable {
   unique_ptr<commodity_history_impl_t> p_impl;
 
 public:
   commodity_history_t();
 
   void add_commodity(commodity_t& comm);
+  void alias_commodity(commodity_t& old_comm, commodity_t& new_comm);
 
-  void add_price(const commodity_t& source,
-                 const datetime_t&  when,
-                 const amount_t&    price);
-  void remove_price(const commodity_t& source,
-                    const commodity_t& target,
-                    const datetime_t&  date);
+  void add_price(const commodity_t& source, const datetime_t& when, const amount_t& price);
+  void remove_price(const commodity_t& source, const commodity_t& target, const datetime_t& date);
 
-  void map_prices(function<void(datetime_t, const amount_t&)> fn,
-                  const commodity_t& source,
-                  const datetime_t&  moment,
-                  const datetime_t&  _oldest = datetime_t(),
+  void map_prices(const function<void(datetime_t, const amount_t&)>& fn, const commodity_t& source,
+                  const datetime_t& moment, const datetime_t& _oldest = datetime_t(),
                   bool bidirectionally = false);
 
-  boost::optional<price_point_t>
-  find_price(const commodity_t& source,
-             const datetime_t&  moment,
-             const datetime_t&  oldest = datetime_t());
+  std::optional<price_point_t> find_price(const commodity_t& source, const datetime_t& moment,
+                                          const datetime_t& oldest = datetime_t());
 
-  boost::optional<price_point_t>
-  find_price(const commodity_t& source,
-             const commodity_t& target,
-             const datetime_t&  moment,
-             const datetime_t&  oldest = datetime_t());
+  std::optional<price_point_t> find_price(const commodity_t& source, const commodity_t& target,
+                                          const datetime_t& moment,
+                                          const datetime_t& oldest = datetime_t());
 
   void print_map(std::ostream& out, const datetime_t& moment = datetime_t());
   ~commodity_history_t();
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_HISTORY_H

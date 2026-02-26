@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,51 +39,38 @@
  *
  * @ingroup util
  */
-#ifndef INCLUDED_FLAGS_H
-#define INCLUDED_FLAGS_H
+#pragma once
 
+namespace ledger::flags {
 
 template <typename T = boost::uint_least8_t, typename U = T>
-class supports_flags
-{
+class supports_flags {
 public:
-  typedef T flags_t;
+  using flags_t = T;
 
 protected:
   flags_t _flags;
 
 public:
-  supports_flags() : _flags(static_cast<T>(0)) {
-    TRACE_CTOR(supports_flags, "");
-  }
+  supports_flags() : _flags(static_cast<T>(0)) { TRACE_CTOR(supports_flags, ""); }
   supports_flags(const supports_flags& arg) : _flags(arg._flags) {
     TRACE_CTOR(supports_flags, "copy");
   }
-  supports_flags(const flags_t& arg) : _flags(arg) {
-    TRACE_CTOR(supports_flags, "const flags_t&");
-  }
-  ~supports_flags() throw() {
-    TRACE_DTOR(supports_flags);
-  }
+  supports_flags(const flags_t& arg) : _flags(arg) { TRACE_CTOR(supports_flags, "const flags_t&"); }
+  ~supports_flags() noexcept { TRACE_DTOR(supports_flags); }
 
   supports_flags& operator=(const supports_flags& other) {
+    if (this == &other)
+      return *this;
     _flags = other._flags;
     return *this;
   }
 
-  flags_t flags() const {
-    return _flags;
-  }
-  bool has_flags(const flags_t arg) const {
-    return _flags & arg;
-  }
+  flags_t flags() const { return _flags; }
+  bool has_flags(const flags_t arg) const { return _flags & arg; }
 
-  void set_flags(const flags_t arg) {
-    _flags = arg;
-  }
-  void clear_flags() {
-    _flags = static_cast<T>(0);
-  }
+  void set_flags(const flags_t arg) { _flags = arg; }
+  void clear_flags() { _flags = static_cast<T>(0); }
   void add_flags(const flags_t arg) {
     _flags = static_cast<T>(static_cast<U>(_flags) | static_cast<U>(arg));
   }
@@ -93,95 +80,68 @@ public:
 };
 
 template <typename T = boost::uint_least8_t, typename U = T>
-class basic_flags_t : public supports_flags<T, U>
-{
+class basic_t : public supports_flags<T, U> {
 public:
-  basic_flags_t() {
-    TRACE_CTOR(basic_flags_t, "");
-  }
-  basic_flags_t(const T& bits) {
-    TRACE_CTOR(basic_flags_t, "const T&");
+  basic_t() { TRACE_CTOR(basic_t, ""); }
+  basic_t(const T& bits) {
+    TRACE_CTOR(basic_t, "const T&");
     supports_flags<T, U>::set_flags(bits);
   }
-  basic_flags_t(const U& bits) {
-    TRACE_CTOR(basic_flags_t, "const U&");
+  basic_t(const U& bits) {
+    TRACE_CTOR(basic_t, "const U&");
     supports_flags<T, U>::set_flags(static_cast<T>(bits));
   }
-  ~basic_flags_t() throw() {
-    TRACE_DTOR(basic_flags_t);
-  }
+  ~basic_t() noexcept { TRACE_DTOR(basic_t); }
 
-  basic_flags_t(const basic_flags_t& other)
-    : supports_flags<T, U>(other) {
-    TRACE_CTOR(basic_flags_t, "copy");
-  }
-  basic_flags_t& operator=(const basic_flags_t& other) {
+  basic_t(const basic_t& other) : supports_flags<T, U>(other) { TRACE_CTOR(basic_t, "copy"); }
+  basic_t& operator=(const basic_t& other) {
+    if (this == &other)
+      return *this;
     set_flags(other.flags());
     return *this;
   }
-  basic_flags_t& operator=(const T& bits) {
+  basic_t& operator=(const T& bits) {
     set_flags(bits);
     return *this;
   }
 
-  operator T() const {
-    return supports_flags<T, U>::flags();
-  }
-  operator U() const {
-    return supports_flags<T, U>::flags();
-  }
+  operator T() const { return supports_flags<T, U>::flags(); }
+  operator U() const { return supports_flags<T, U>::flags(); }
 
-  basic_flags_t plus_flags(const T& arg) const {
-    basic_flags_t temp(*this);
+  basic_t plus_flags(const T& arg) const {
+    basic_t temp(*this);
     temp.add_flags(arg);
     return temp;
   }
-  basic_flags_t minus_flags(const T& arg) const {
-    basic_flags_t temp(*this);
+  basic_t minus_flags(const T& arg) const {
+    basic_t temp(*this);
     temp.drop_flags(arg);
     return temp;
   }
 };
 
 template <typename T = boost::uint_least8_t>
-class delegates_flags : public boost::noncopyable
-{
+class delegates_flags : public boost::noncopyable {
 public:
-  typedef T flags_t;
+  using flags_t = T;
 
 protected:
   supports_flags<T>& _flags;
 
 public:
-  delegates_flags() : _flags() {
-    TRACE_CTOR(delegates_flags, "");
-  }
+  delegates_flags() : _flags() { TRACE_CTOR(delegates_flags, ""); }
   delegates_flags(supports_flags<T>& arg) : _flags(arg) {
     TRACE_CTOR(delegates_flags, "const supports_flags<T>&");
   }
-  ~delegates_flags() throw() {
-    TRACE_DTOR(delegates_flags);
-  }
+  ~delegates_flags() noexcept { TRACE_DTOR(delegates_flags); }
 
-  flags_t flags() const {
-    return _flags.flags();
-  }
-  bool has_flags(const flags_t arg) const {
-    return _flags.has_flags(arg);
-  }
+  flags_t flags() const { return _flags.flags(); }
+  bool has_flags(const flags_t arg) const { return _flags.has_flags(arg); }
 
-  void set_flags(const flags_t arg) {
-    _flags.set_flags(arg);
-  }
-  void clear_flags() {
-    _flags.clear_flags();
-  }
-  void add_flags(const flags_t arg) {
-    _flags.add_flags(arg);
-  }
-  void drop_flags(const flags_t arg) {
-    _flags.drop_flags(arg);
-  }
+  void set_flags(const flags_t arg) { _flags.set_flags(arg); }
+  void clear_flags() { _flags.clear_flags(); }
+  void add_flags(const flags_t arg) { _flags.add_flags(arg); }
+  void drop_flags(const flags_t arg) { _flags.drop_flags(arg); }
 };
 
-#endif // INCLUDED_FLAGS_H
+} // namespace ledger::flags

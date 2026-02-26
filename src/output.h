@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,7 @@
  *
  * @ingroup report
  */
-#ifndef INCLUDED_OUTPUT_H
-#define INCLUDED_OUTPUT_H
+#pragma once
 
 #include "chain.h"
 #include "predicate.h"
@@ -54,38 +53,32 @@ class post_t;
 class item_t;
 class report_t;
 
-class format_posts : public item_handler<post_t>
-{
+class format_posts : public item_handler<post_t> {
 protected:
-  report_t&   report;
-  format_t    first_line_format;
-  format_t    next_lines_format;
-  format_t    between_format;
-  format_t    prepend_format;
+  report_t& report;
+  format_t first_line_format;
+  format_t next_lines_format;
+  format_t between_format;
+  format_t prepend_format;
   std::size_t prepend_width;
-  xact_t *    last_xact;
-  post_t *    last_post;
-  bool        first_report_title;
-  string      report_title;
+  xact_t* last_xact;
+  post_t* last_post;
+  bool first_report_title;
+  string report_title;
 
 public:
   format_posts(report_t& _report, const string& format,
-               const optional<string>& _prepend_format = none,
-               std::size_t _prepend_width = 0);
-  virtual ~format_posts() {
-    TRACE_DTOR(format_posts);
-  }
+               const optional<string>& _prepend_format = none, std::size_t _prepend_width = 0);
+  ~format_posts() override { TRACE_DTOR(format_posts); }
 
-  virtual void title(const string& str) {
-    report_title = str;
-  }
+  void title(const string& str) override { report_title = str; }
 
-  virtual void flush();
-  virtual void operator()(post_t& post);
+  void flush() override;
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
-    last_xact    = NULL;
-    last_post    = NULL;
+  void clear() override {
+    last_xact = nullptr;
+    last_post = nullptr;
 
     report_title = "";
 
@@ -93,42 +86,35 @@ public:
   }
 };
 
-class format_accounts : public item_handler<account_t>
-{
+class format_accounts : public item_handler<account_t> {
 protected:
-  report_t&   report;
-  format_t    account_line_format;
-  format_t    total_line_format;
-  format_t    separator_format;
-  format_t    prepend_format;
+  report_t& report;
+  format_t account_line_format;
+  format_t total_line_format;
+  format_t separator_format;
+  format_t prepend_format;
   std::size_t prepend_width;
   predicate_t disp_pred;
-  bool        first_report_title;
-  string      report_title;
+  bool first_report_title;
+  string report_title;
 
-  std::list<account_t *> posted_accounts;
+  std::list<account_t*> posted_accounts;
 
 public:
   format_accounts(report_t& _report, const string& _format,
-                  const optional<string>& _prepend_format = none,
-                  std::size_t _prepend_width = 0);
-  virtual ~format_accounts() {
-    TRACE_DTOR(format_accounts);
-  }
+                  const optional<string>& _prepend_format = none, std::size_t _prepend_width = 0);
+  ~format_accounts() override { TRACE_DTOR(format_accounts); }
 
-  std::pair<std::size_t, std::size_t>
-  mark_accounts(account_t& account, const bool flat);
+  std::pair<std::size_t, std::size_t> mark_accounts(account_t& account, const bool flat);
 
-  virtual void title(const string& str) {
-    report_title = str;
-  }
+  void title(const string& str) override { report_title = str; }
 
   virtual std::size_t post_account(account_t& account, const bool flat);
-  virtual void        flush();
+  void flush() override;
 
-  virtual void operator()(account_t& account);
+  void operator()(account_t& account) override;
 
-  virtual void clear() {
+  void clear() override {
     disp_pred.mark_uncompiled();
     posted_accounts.clear();
 
@@ -138,94 +124,77 @@ public:
   }
 };
 
-class report_accounts : public item_handler<post_t>
-{
+class report_accounts : public item_handler<post_t> {
+public:
+  using accounts_pair = std::map<account_t*, std::size_t>::value_type;
+  using accounts_report_map = std::map<account_t*, std::size_t, account_compare>;
+
 protected:
   report_t& report;
-
-  typedef std::map<account_t *, std::size_t>::value_type accounts_pair;
-  typedef std::map<account_t *, std::size_t, account_compare> accounts_report_map;
-
   accounts_report_map accounts;
 
 public:
-  report_accounts(report_t& _report) : report(_report) {
-    TRACE_CTOR(report_accounts, "report&");
-  }
-  virtual ~report_accounts() {
-    TRACE_DTOR(report_accounts);
-  }
+  report_accounts(report_t& _report) : report(_report) { TRACE_CTOR(report_accounts, "report&"); }
+  ~report_accounts() override { TRACE_DTOR(report_accounts); }
 
-  virtual void flush();
-  virtual void operator()(post_t& post);
+  void flush() override;
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
+  void clear() override {
     accounts.clear();
     item_handler<post_t>::clear();
   }
 };
 
-class report_payees : public item_handler<post_t>
-{
+class report_payees : public item_handler<post_t> {
 protected:
   report_t& report;
 
   std::map<string, std::size_t> payees;
 
-  typedef std::map<string, std::size_t>::value_type payees_pair;
+  using payees_pair = std::map<string, std::size_t>::value_type;
 
 public:
-  report_payees(report_t& _report) : report(_report) {
-    TRACE_CTOR(report_payees, "report&");
-  }
-  virtual ~report_payees() {
-    TRACE_DTOR(report_payees);
-  }
+  report_payees(report_t& _report) : report(_report) { TRACE_CTOR(report_payees, "report&"); }
+  ~report_payees() override { TRACE_DTOR(report_payees); }
 
-  virtual void flush();
-  virtual void operator()(post_t& post);
+  void flush() override;
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
+  void clear() override {
     payees.clear();
     item_handler<post_t>::clear();
   }
 };
 
-class report_tags : public item_handler<post_t>
-{
+class report_tags : public item_handler<post_t> {
 protected:
   report_t& report;
 
   std::map<string, std::size_t> tags;
 
-  typedef std::map<string, std::size_t>::value_type tags_pair;
+  using tags_pair = std::map<string, std::size_t>::value_type;
 
 public:
-  report_tags(report_t& _report) : report(_report) {
-    TRACE_CTOR(report_tags, "report&");
-  }
-  virtual ~report_tags() {
-    TRACE_DTOR(report_tags);
-  }
+  report_tags(report_t& _report) : report(_report) { TRACE_CTOR(report_tags, "report&"); }
+  ~report_tags() override { TRACE_DTOR(report_tags); }
 
-  virtual void flush();
+  void flush() override;
   virtual void gather_metadata(item_t& item);
-  virtual void operator()(post_t& post);
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
+  void clear() override {
     tags.clear();
     item_handler<post_t>::clear();
   }
 };
 
-
-class report_commodities : public item_handler<post_t>
-{
+class report_commodities : public item_handler<post_t> {
 protected:
   report_t& report;
 
-  typedef std::map<commodity_t *, std::size_t>::value_type commodities_pair;
-  typedef std::map<commodity_t *, std::size_t, commodity_compare> commodities_report_map;
+  using commodities_pair = std::map<commodity_t*, std::size_t>::value_type;
+  using commodities_report_map = std::map<commodity_t*, std::size_t, commodity_compare>;
 
   commodities_report_map commodities;
 
@@ -233,19 +202,15 @@ public:
   report_commodities(report_t& _report) : report(_report) {
     TRACE_CTOR(report_commodities, "report&");
   }
-  virtual ~report_commodities() {
-    TRACE_DTOR(report_commodities);
-  }
+  ~report_commodities() override { TRACE_DTOR(report_commodities); }
 
-  virtual void flush();
-  virtual void operator()(post_t& post);
+  void flush() override;
+  void operator()(post_t& post) override;
 
-  virtual void clear() {
+  void clear() override {
     commodities.clear();
     item_handler<post_t>::clear();
   }
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_OUTPUT_H

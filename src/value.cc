@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,11 +31,13 @@
 
 #include <system.hh>
 
+#include <boost/tokenizer.hpp>
+
 #include "value.h"
 #include "commodity.h"
 #include "annotate.h"
 #include "pool.h"
-#include "unistring.h"          // for justify()
+#include "unistring.h" // for justify()
 #include "op.h"
 
 namespace ledger {
@@ -43,16 +45,18 @@ namespace ledger {
 intrusive_ptr<value_t::storage_t> value_t::true_value;
 intrusive_ptr<value_t::storage_t> value_t::false_value;
 
-value_t::storage_t& value_t::storage_t::operator=(const value_t::storage_t& rhs)
-{
+value_t::storage_t& value_t::storage_t::operator=(const value_t::storage_t& rhs) {
+  if (this == &rhs)
+    return *this;
+
   type = rhs.type;
 
   switch (type) {
-  case BALANCE:
-    data = new balance_t(*boost::get<balance_t *>(rhs.data));
+  case BALANCE: // NOLINT(bugprone-branch-clone)
+    data = new balance_t(*std::get<balance_t*>(rhs.data));
     break;
   case SEQUENCE:
-    data = new sequence_t(*boost::get<sequence_t *>(rhs.data));
+    data = new sequence_t(*std::get<sequence_t*>(rhs.data));
     break;
 
   default:
@@ -63,25 +67,22 @@ value_t::storage_t& value_t::storage_t::operator=(const value_t::storage_t& rhs)
   return *this;
 }
 
-void value_t::initialize()
-{
-  true_value        = new storage_t;
-  true_value->type  = BOOLEAN;
-  true_value->data  = true;
+void value_t::initialize() {
+  true_value = new storage_t;
+  true_value->type = BOOLEAN;
+  true_value->data = true;
 
-  false_value       = new storage_t;
+  false_value = new storage_t;
   false_value->type = BOOLEAN;
   false_value->data = false;
 }
 
-void value_t::shutdown()
-{
-  true_value  = intrusive_ptr<storage_t>();
+void value_t::shutdown() {
+  true_value = intrusive_ptr<storage_t>();
   false_value = intrusive_ptr<storage_t>();
 }
 
-value_t::operator bool() const
-{
+value_t::operator bool() const {
   switch (type()) {
   case VOID:
     return false;
@@ -97,27 +98,28 @@ value_t::operator bool() const
     return as_amount();
   case BALANCE:
     return as_balance();
+  case COMMODITY:
+    return as_commodity();
   case STRING:
-    return ! as_string().empty();
+    return !as_string().empty();
   case MASK: {
     std::ostringstream out;
     out << *this;
-    throw_(value_error,
-           _f("Cannot determine truth of %1% (did you mean 'account =~ %2%'?)")
-           % label() % out.str());
+    throw_(value_error, _f("Cannot determine truth of %1% (did you mean 'account =~ %2%'?)") %
+                            label() % out.str());
   }
   case SEQUENCE:
-    if (! as_sequence().empty()) {
-      foreach (const value_t& value, as_sequence()) {
+    if (!as_sequence().empty()) {
+      for (const value_t& value : as_sequence()) {
         if (value)
           return true;
       }
     }
     return false;
   case SCOPE:
-    return as_scope() != NULL;
+    return as_scope() != nullptr;
   case ANY:
-    return ! as_any().empty();
+    return as_any().has_value();
   }
 
   add_error_context(_f("While taking boolean value of %1%:") % *this);
@@ -126,12 +128,11 @@ value_t::operator bool() const
   return false;
 }
 
-void value_t::set_type(type_t new_type)
-{
-  if (new_type == VOID) {
+void value_t::set_type(type_t new_type) {
+  if (new_type == VOID) { // NOLINT(bugprone-branch-clone)
     storage.reset();
   } else {
-    if (! storage || storage->refc > 1)
+    if (!storage || storage->refc > 1)
       storage = new storage_t;
     else
       storage->destroy();
@@ -139,8 +140,13 @@ void value_t::set_type(type_t new_type)
   }
 }
 
-bool value_t::to_boolean() const
-{
+void value_t::set_commodity(const commodity_t& val) {
+  VERIFY(val.valid());
+  set_type(COMMODITY);
+  storage->data = &val;
+}
+
+bool value_t::to_boolean() const {
   if (is_boolean()) {
     return as_boolean();
   } else {
@@ -150,8 +156,7 @@ bool value_t::to_boolean() const
   }
 }
 
-datetime_t value_t::to_datetime() const
-{
+datetime_t value_t::to_datetime() const {
   if (is_datetime()) {
     return as_datetime();
   } else {
@@ -161,8 +166,7 @@ datetime_t value_t::to_datetime() const
   }
 }
 
-date_t value_t::to_date() const
-{
+date_t value_t::to_date() const {
   if (is_date()) {
     return as_date();
   } else {
@@ -172,8 +176,7 @@ date_t value_t::to_date() const
   }
 }
 
-int value_t::to_int() const
-{
+int value_t::to_int() const {
   if (is_long()) {
     return static_cast<int>(as_long());
   } else {
@@ -183,8 +186,7 @@ int value_t::to_int() const
   }
 }
 
-long value_t::to_long() const
-{
+long value_t::to_long() const {
   if (is_long()) {
     return as_long();
   } else {
@@ -194,8 +196,7 @@ long value_t::to_long() const
   }
 }
 
-amount_t value_t::to_amount() const
-{
+amount_t value_t::to_amount() const {
   if (is_amount()) {
     return as_amount();
   } else {
@@ -205,8 +206,7 @@ amount_t value_t::to_amount() const
   }
 }
 
-balance_t value_t::to_balance() const
-{
+balance_t value_t::to_balance() const {
   if (is_balance()) {
     return as_balance();
   } else {
@@ -216,10 +216,21 @@ balance_t value_t::to_balance() const
   }
 }
 
-string value_t::to_string() const
-{
+const commodity_t& value_t::to_commodity() const {
+  if (is_commodity()) {
+    return as_commodity();
+  } else {
+    value_t temp(*this);
+    temp.in_place_cast(COMMODITY);
+    return temp.as_commodity();
+  }
+}
+
+string value_t::to_string() const {
   if (is_string()) {
     return as_string();
+  } else if (is_commodity()) {
+    return as_commodity().symbol();
   } else {
     value_t temp(*this);
     temp.in_place_cast(STRING);
@@ -227,8 +238,7 @@ string value_t::to_string() const
   }
 }
 
-mask_t value_t::to_mask() const
-{
+mask_t value_t::to_mask() const {
   if (is_mask()) {
     return as_mask();
   } else {
@@ -238,8 +248,7 @@ mask_t value_t::to_mask() const
   }
 }
 
-value_t::sequence_t value_t::to_sequence() const
-{
+value_t::sequence_t value_t::to_sequence() const {
   if (is_sequence()) {
     return as_sequence();
   } else {
@@ -249,9 +258,7 @@ value_t::sequence_t value_t::to_sequence() const
   }
 }
 
-
-void value_t::in_place_simplify()
-{
+void value_t::in_place_simplify() {
 #if DEBUG_ON
   LOGGER("value.simplify");
 #endif
@@ -268,18 +275,9 @@ void value_t::in_place_simplify()
     in_place_cast(AMOUNT);
     DEBUG_("as an amount it looks like: " << *this);
   }
-
-#if REDUCE_TO_INTEGER        // this is off by default
-  if (is_amount() && ! as_amount().has_commodity() &&
-      as_amount().fits_in_long()) {
-    DEBUG_("Reducing amount to integer");
-    in_place_cast(INTEGER);
-  }
-#endif
 }
 
-value_t value_t::number() const
-{
+value_t value_t::number() const {
   switch (type()) {
   case VOID:
     return 0L;
@@ -292,9 +290,9 @@ value_t value_t::number() const
   case BALANCE:
     return as_balance().number();
   case SEQUENCE:
-    if (! as_sequence().empty()) {
+    if (!as_sequence().empty()) {
       value_t temp;
-      foreach (const value_t& value, as_sequence())
+      for (const value_t& value : as_sequence())
         temp += value.number();
       return temp;
     }
@@ -309,19 +307,23 @@ value_t value_t::number() const
   return false;
 }
 
-value_t& value_t::operator+=(const value_t& val)
-{
+value_t& value_t::operator+=(const value_t& val) {
+  if (val.is_null())
+    return *this;
+
   if (is_string()) {
     if (val.is_string())
       as_string_lval() += val.as_string();
     else
       as_string_lval() += val.to_string();
     return *this;
-  }
-  else if (is_sequence()) {
+  } else if (is_commodity()) {
+    in_place_cast(STRING);
+    return *this += val;
+  } else if (is_sequence()) {
     if (val.is_sequence()) {
       if (size() == val.size()) {
-        sequence_t::iterator       i = begin();
+        sequence_t::iterator i = begin();
         sequence_t::const_iterator j = val.begin();
 
         for (; i != end(); i++, j++)
@@ -345,12 +347,11 @@ value_t& value_t::operator+=(const value_t& val)
     switch (val.type()) {
     case INTEGER:
       as_datetime_lval() +=
-        time_duration_t(0, 0, static_cast<time_duration_t::sec_type>(val.as_long()));
+          time_duration_t(0, 0, static_cast<time_duration_t::sec_type>(val.as_long()));
       return *this;
     case AMOUNT:
       as_datetime_lval() +=
-        time_duration_t(0, 0, static_cast<time_duration_t::sec_type>
-                        (val.as_amount().to_long()));
+          time_duration_t(0, 0, static_cast<time_duration_t::sec_type>(val.as_amount().to_long()));
       return *this;
     default:
       break;
@@ -448,14 +449,16 @@ value_t& value_t::operator+=(const value_t& val)
   return *this;
 }
 
-value_t& value_t::operator-=(const value_t& val)
-{
+value_t& value_t::operator-=(const value_t& val) {
+  if (val.is_null())
+    return *this;
+
   if (is_sequence()) {
     sequence_t& seq(as_sequence_lval());
 
     if (val.is_sequence()) {
       if (size() == val.size()) {
-        sequence_t::iterator       i = begin();
+        sequence_t::iterator i = begin();
         sequence_t::const_iterator j = val.begin();
 
         for (; i != end(); i++, j++)
@@ -473,16 +476,20 @@ value_t& value_t::operator-=(const value_t& val)
   }
 
   switch (type()) {
+  case VOID:
+    *this = val;
+    in_place_negate();
+    return *this;
+
   case DATETIME:
     switch (val.type()) {
     case INTEGER:
       as_datetime_lval() -=
-        time_duration_t(0, 0, static_cast<time_duration_t::sec_type>(val.as_long()));
+          time_duration_t(0, 0, static_cast<time_duration_t::sec_type>(val.as_long()));
       return *this;
     case AMOUNT:
       as_datetime_lval() -=
-        time_duration_t(0, 0, static_cast<time_duration_t::sec_type>
-                        (val.as_amount().to_long()));
+          time_duration_t(0, 0, static_cast<time_duration_t::sec_type>(val.as_amount().to_long()));
       return *this;
     default:
       break;
@@ -588,17 +595,20 @@ value_t& value_t::operator-=(const value_t& val)
   return *this;
 }
 
-value_t& value_t::operator*=(const value_t& val)
-{
+value_t& value_t::operator*=(const value_t& val) {
   if (is_string()) {
-    string temp;
+    const string& s = as_string();
     long count = val.to_long();
+    string temp;
+    temp.reserve(s.size() * static_cast<std::size_t>(count));
     for (long i = 0; i < count; i++)
-      temp += as_string();
+      temp += s;
     set_string(temp);
     return *this;
-  }
-  else if (is_sequence()) {
+  } else if (is_commodity()) {
+    in_place_cast(STRING);
+    return *this *= val;
+  } else if (is_sequence()) {
     value_t temp;
     long count = val.to_long();
     for (long i = 0; i < count; i++)
@@ -649,8 +659,7 @@ value_t& value_t::operator*=(const value_t& val)
         in_place_simplify();
         as_amount_lval() *= val.as_amount();
         return *this;
-      }
-      else if (! val.as_amount().has_commodity()) {
+      } else if (!val.as_amount().has_commodity()) {
         as_balance_lval() *= val.as_amount();
         return *this;
       }
@@ -670,8 +679,7 @@ value_t& value_t::operator*=(const value_t& val)
   return *this;
 }
 
-value_t& value_t::operator/=(const value_t& val)
-{
+value_t& value_t::operator/=(const value_t& val) {
   switch (type()) {
   case INTEGER:
     switch (val.type()) {
@@ -727,8 +735,7 @@ value_t& value_t::operator/=(const value_t& val)
         in_place_cast(AMOUNT);
         as_amount_lval() /= val.as_amount();
         return *this;
-      }
-      else if (! val.as_amount().has_commodity()) {
+      } else if (!val.as_amount().has_commodity()) {
         as_balance_lval() /= val.as_amount();
         return *this;
       }
@@ -748,9 +755,7 @@ value_t& value_t::operator/=(const value_t& val)
   return *this;
 }
 
-
-bool value_t::is_equal_to(const value_t& val) const
-{
+bool value_t::is_equal_to(const value_t& val) const {
   switch (type()) {
   case VOID:
     return val.type() == VOID;
@@ -809,9 +814,29 @@ bool value_t::is_equal_to(const value_t& val) const
     }
     break;
 
+  case COMMODITY:
+    switch (val.type()) {
+    case COMMODITY:
+      return as_commodity() == val.as_commodity();
+    case STRING: {
+      if (const auto* otherCommodity = as_commodity().pool().find(val.as_string()))
+        return as_commodity() == *otherCommodity;
+      return false;
+    }
+    default:
+      break;
+    }
+    break;
+
   case STRING:
-    if (val.is_string())
+    switch (val.type()) {
+    case COMMODITY:
+      return val.is_equal_to(*this);
+    case STRING:
       return as_string() == val.as_string();
+    default:
+      break;
+    }
     break;
 
   case MASK:
@@ -834,19 +859,17 @@ bool value_t::is_equal_to(const value_t& val) const
   return *this;
 }
 
-bool value_t::is_less_than(const value_t& val) const
-{
+bool value_t::is_less_than(const value_t& val) const {
   switch (type()) {
+  case VOID:
+    return !val.is_null(); // null is less than any non-null value
+
   case BOOLEAN:
     if (val.is_boolean()) {
       if (as_boolean()) {
-        if (! val.as_boolean())
-          return false;
-        else
-          return false;
-      }
-      else if (! as_boolean()) {
-        if (! val.as_boolean())
+        return false;
+      } else if (!as_boolean()) {
+        if (!val.as_boolean())
           return false;
         else
           return true;
@@ -882,9 +905,8 @@ bool value_t::is_less_than(const value_t& val) const
     case INTEGER:
       return as_amount() < val.as_long();
     case AMOUNT:
-      if (as_amount().commodity() == val.as_amount().commodity() ||
-          ! as_amount().has_commodity() ||
-          ! val.as_amount().has_commodity())
+      if (as_amount().commodity() == val.as_amount().commodity() || !as_amount().has_commodity() ||
+          !val.as_amount().has_commodity())
         return as_amount() < val.as_amount();
       else
         return commodity_t::compare_by_commodity()(&as_amount(), &val.as_amount()) < 0;
@@ -900,13 +922,12 @@ bool value_t::is_less_than(const value_t& val) const
     case INTEGER:
     case AMOUNT: {
       bool no_amounts = true;
-      foreach (const balance_t::amounts_map::value_type& pair,
-               as_balance().amounts) {
+      for (const balance_t::amounts_map::value_type& pair : as_balance().amounts) {
         if (pair.second >= val)
           return false;
         no_amounts = false;
       }
-      return ! no_amounts;
+      return !no_amounts;
     }
     case BALANCE:
       return val.to_amount() > to_amount();
@@ -915,9 +936,29 @@ bool value_t::is_less_than(const value_t& val) const
     }
     break;
 
+  case COMMODITY:
+    switch (val.type()) {
+    case COMMODITY:
+      return to_string() < val.to_string();
+    case STRING: {
+      if (const auto* otherCommodity = as_commodity().pool().find(val.as_string()))
+        return to_string() < otherCommodity->symbol();
+      return to_string() < val.as_string();
+    }
+    default:
+      break;
+    }
+    break;
+
   case STRING:
-    if (val.is_string())
+    switch (val.type()) {
+    case COMMODITY:
+      return val.is_greater_than(*this);
+    case STRING:
       return as_string() < val.as_string();
+    default:
+      break;
+    }
     break;
 
   case SEQUENCE:
@@ -925,19 +966,18 @@ bool value_t::is_less_than(const value_t& val) const
     case INTEGER:
     case AMOUNT: {
       bool no_amounts = true;
-      foreach (const value_t& value, as_sequence()) {
+      for (const value_t& value : as_sequence()) {
         if (value >= val)
           return false;
         no_amounts = false;
       }
-      return ! no_amounts;
+      return !no_amounts;
     }
     case SEQUENCE: {
       sequence_t::const_iterator i = as_sequence().begin();
       sequence_t::const_iterator j = val.as_sequence().begin();
-      for (; (i != as_sequence().end() &&
-              j != val.as_sequence().end()); i++, j++) {
-        if (! ((*i) < (*j)))
+      for (; (i != as_sequence().end() && j != val.as_sequence().end()); i++, j++) {
+        if (!((*i) < (*j)))
           return false;
       }
       if (i == as_sequence().end())
@@ -960,22 +1000,20 @@ bool value_t::is_less_than(const value_t& val) const
   return *this;
 }
 
-bool value_t::is_greater_than(const value_t& val) const
-{
+bool value_t::is_greater_than(const value_t& val) const {
   switch (type()) {
+  case VOID:
+    return false; // null is not greater than anything
+
   case BOOLEAN:
     if (val.is_boolean()) {
       if (as_boolean()) {
-        if (! val.as_boolean())
+        if (!val.as_boolean())
           return true;
         else
           return false;
-      }
-      else if (! as_boolean()) {
-        if (! val.as_boolean())
-          return false;
-        else
-          return false;
+      } else if (!as_boolean()) {
+        return false;
       }
     }
     break;
@@ -1021,13 +1059,12 @@ bool value_t::is_greater_than(const value_t& val) const
     case INTEGER:
     case AMOUNT: {
       bool no_amounts = true;
-      foreach (const balance_t::amounts_map::value_type& pair,
-               as_balance().amounts) {
+      for (const balance_t::amounts_map::value_type& pair : as_balance().amounts) {
         if (pair.second <= val)
           return false;
         no_amounts = false;
       }
-      return ! no_amounts;
+      return !no_amounts;
     }
     case BALANCE:
       return val.to_amount() < to_amount();
@@ -1036,9 +1073,29 @@ bool value_t::is_greater_than(const value_t& val) const
     }
     break;
 
+  case COMMODITY:
+    switch (val.type()) {
+    case COMMODITY:
+      return to_string() > val.to_string();
+    case STRING: {
+      if (const auto* otherCommodity = as_commodity().pool().find(val.as_string()))
+        return to_string() > otherCommodity->symbol();
+      return to_string() > val.as_string();
+    }
+    default:
+      break;
+    }
+    break;
+
   case STRING:
-    if (val.is_string())
+    switch (val.type()) {
+    case COMMODITY:
+      return val.is_less_than(*this);
+    case STRING:
       return as_string() > val.as_string();
+    default:
+      break;
+    }
     break;
 
   case SEQUENCE:
@@ -1046,19 +1103,18 @@ bool value_t::is_greater_than(const value_t& val) const
     case INTEGER:
     case AMOUNT: {
       bool no_amounts = true;
-      foreach (const value_t& value, as_sequence()) {
+      for (const value_t& value : as_sequence()) {
         if (value <= val)
           return false;
         no_amounts = false;
       }
-      return ! no_amounts;
+      return !no_amounts;
     }
     case SEQUENCE: {
       sequence_t::const_iterator i = as_sequence().begin();
       sequence_t::const_iterator j = val.as_sequence().begin();
-      for (; (i != as_sequence().end() &&
-              j != val.as_sequence().end()); i++, j++) {
-        if (! ((*i) > (*j)))
+      for (; (i != as_sequence().end() && j != val.as_sequence().end()); i++, j++) {
+        if (!((*i) > (*j)))
           return false;
       }
       if (i == as_sequence().end())
@@ -1081,8 +1137,7 @@ bool value_t::is_greater_than(const value_t& val) const
   return *this;
 }
 
-void value_t::in_place_cast(type_t cast_type)
-{
+void value_t::in_place_cast(type_t cast_type) {
   if (type() == cast_type)
     return;
 
@@ -1091,10 +1146,9 @@ void value_t::in_place_cast(type_t cast_type)
   if (cast_type == BOOLEAN) {
     set_boolean(bool(*this));
     return;
-  }
-  else if (cast_type == SEQUENCE) {
+  } else if (cast_type == SEQUENCE) {
     sequence_t temp;
-    if (! is_null())
+    if (!is_null())
       temp.push_back(new value_t(*this));
     set_sequence(temp);
     return;
@@ -1211,15 +1265,13 @@ void value_t::in_place_cast(type_t cast_type)
         // about to be repurposed), we must pass in a copy.
         set_amount(amount_t((*bal.amounts.begin()).second));
         return;
-      }
-      else if (bal.amounts.size() == 0) {
+      } else if (bal.amounts.size() == 0) {
         set_amount(0L);
         return;
-      }
-      else {
+      } else {
         add_error_context(_f("While converting %1% to an amount:") % *this);
-        throw_(value_error, _f("Cannot convert %1% with multiple commodities to %2%")
-               % label() % label(cast_type));
+        throw_(value_error, _f("Cannot convert %1% with multiple commodities to %2%") % label() %
+                                label(cast_type));
       }
       break;
     }
@@ -1235,6 +1287,16 @@ void value_t::in_place_cast(type_t cast_type)
     break;
   }
 
+  case COMMODITY:
+    switch (cast_type) {
+    case STRING:
+      set_string(to_string());
+      return;
+    default:
+      break;
+    }
+    break;
+
   case STRING:
     switch (cast_type) {
     case INTEGER: {
@@ -1247,15 +1309,25 @@ void value_t::in_place_cast(type_t cast_type)
     case AMOUNT:
       set_amount(amount_t(as_string()));
       return;
+    case COMMODITY:
+      if (const auto* commodity = commodity_pool_t::current_pool->find(as_string())) {
+        set_commodity(*commodity);
+        return;
+      }
+      break;
     case DATE:
       set_date(parse_date(as_string()));
       return;
     case DATETIME:
       set_datetime(parse_datetime(as_string()));
       return;
-    case MASK:
-      set_mask(as_string());
+    case MASK: {
+      // Make a copy since set_mask calls set_type which may reallocate storage,
+      // invalidating the reference returned by as_string()
+      string str = as_string(); // NOLINT(bugprone-unused-local-non-trivial-variable)
+      set_mask(str);
       return;
+    }
     default:
       break;
     }
@@ -1276,22 +1348,20 @@ void value_t::in_place_cast(type_t cast_type)
   }
 
   add_error_context(_f("While converting %1%:") % *this);
-  throw_(value_error,
-         _f("Cannot convert %1% to %2%") % label() % label(cast_type));
+  throw_(value_error, _f("Cannot convert %1% to %2%") % label() % label(cast_type));
 }
 
-void value_t::in_place_negate()
-{
+void value_t::in_place_negate() {
   switch (type()) {
+  case VOID:
+    return;
   case BOOLEAN:
-    set_boolean(! as_boolean());
+    set_boolean(!as_boolean());
     return;
   case INTEGER:
   case DATETIME:
-    set_long(- as_long());
-    return;
   case DATE:
-    set_long(- as_long());
+    set_long(-as_long());
     return;
   case AMOUNT:
     as_amount_lval().in_place_negate();
@@ -1300,7 +1370,7 @@ void value_t::in_place_negate()
     as_balance_lval().in_place_negate();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_negate();
     return;
   default:
@@ -1311,30 +1381,30 @@ void value_t::in_place_negate()
   throw_(value_error, _f("Cannot negate %1%") % label());
 }
 
-void value_t::in_place_not()
-{
+void value_t::in_place_not() {
   switch (type()) {
   case BOOLEAN:
-    set_boolean(! as_boolean());
+    set_boolean(!as_boolean());
     return;
   case INTEGER:
   case DATETIME:
-    set_boolean(! as_long());
-    return;
   case DATE:
-    set_boolean(! as_long());
+    set_boolean(!as_long());
     return;
   case AMOUNT:
-    set_boolean(! as_amount());
+    set_boolean(!as_amount());
     return;
   case BALANCE:
-    set_boolean(! as_balance());
+    set_boolean(!as_balance());
+    return;
+  case COMMODITY:
+    set_boolean(!as_commodity());
     return;
   case STRING:
     set_boolean(as_string().empty());
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_not();
     return;
   default:
@@ -1345,30 +1415,31 @@ void value_t::in_place_not()
   throw_(value_error, _f("Cannot 'not' %1%") % label());
 }
 
-bool value_t::is_realzero() const
-{
+bool value_t::is_realzero() const {
   switch (type()) {
   case BOOLEAN:
-    return ! as_boolean();
+    return !as_boolean();
   case INTEGER:
     return as_long() == 0;
   case DATETIME:
-    return ! is_valid(as_datetime());
+    return !is_valid(as_datetime());
   case DATE:
-    return ! is_valid(as_date());
+    return !is_valid(as_date());
   case AMOUNT:
     return as_amount().is_realzero();
   case BALANCE:
     return as_balance().is_realzero();
+  case COMMODITY:
+    return !as_commodity();
   case STRING:
     return as_string().empty();
   case SEQUENCE:
     return as_sequence().empty();
 
   case SCOPE:
-    return as_scope() == NULL;
+    return as_scope() == nullptr;
   case ANY:
-    return as_any().empty();
+    return !as_any().has_value();
 
   default:
     add_error_context(_f("While applying is_realzero to %1%:") % *this);
@@ -1377,30 +1448,31 @@ bool value_t::is_realzero() const
   return false;
 }
 
-bool value_t::is_zero() const
-{
+bool value_t::is_zero() const {
   switch (type()) {
   case BOOLEAN:
-    return ! as_boolean();
+    return !as_boolean();
   case INTEGER:
     return as_long() == 0;
   case DATETIME:
-    return ! is_valid(as_datetime());
+    return !is_valid(as_datetime());
   case DATE:
-    return ! is_valid(as_date());
+    return !is_valid(as_date());
   case AMOUNT:
     return as_amount().is_zero();
   case BALANCE:
     return as_balance().is_zero();
+  case COMMODITY:
+    return !as_commodity();
   case STRING:
     return as_string().empty();
   case SEQUENCE:
     return as_sequence().empty();
 
   case SCOPE:
-    return as_scope() == NULL;
+    return as_scope() == nullptr;
   case ANY:
-    return as_any().empty();
+    return !as_any().has_value();
 
   default:
     add_error_context(_f("While applying is_zero to %1%:") % *this);
@@ -1409,26 +1481,28 @@ bool value_t::is_zero() const
   return false;
 }
 
-value_t value_t::value(const datetime_t&   moment,
-                       const commodity_t * in_terms_of) const
-{
+value_t value_t::value(const datetime_t& moment, const commodity_t* in_terms_of) const {
   switch (type()) {
   case INTEGER:
     return NULL_VALUE;
 
   case AMOUNT:
-    if (optional<amount_t> val = as_amount().value(moment, in_terms_of))
+    if (auto val = as_amount().value(moment, in_terms_of))
       return *val;
     return NULL_VALUE;
 
   case BALANCE:
+    // An empty balance is zero in any commodity, so return it as-is rather
+    // than converting to NULL_VALUE which would display as blank
+    if (as_balance().is_empty())
+      return *this;
     if (optional<balance_t> bal = as_balance().value(moment, in_terms_of))
       return *bal;
     return NULL_VALUE;
 
   case SEQUENCE: {
     value_t temp;
-    foreach (const value_t& value, as_sequence())
+    for (const value_t& value : as_sequence())
       temp.push_back(value.value(moment, in_terms_of));
     return temp;
   }
@@ -1442,54 +1516,77 @@ value_t value_t::value(const datetime_t&   moment,
   return NULL_VALUE;
 }
 
-value_t value_t::exchange_commodities(const std::string& commodities,
-                                      const bool         add_prices,
-                                      const datetime_t&  moment)
-{
+value_t value_t::exchange_commodities(const std::string& commodities, const bool add_prices,
+                                      const datetime_t& moment) {
   if (type() == SEQUENCE) {
     value_t temp;
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       temp.push_back(value.exchange_commodities(commodities, add_prices, moment));
     return temp;
   }
 
   // If we are repricing to just a single commodity, with no price
   // expression, skip the expensive logic below.
-  if (commodities.find(',') == string::npos &&
-      commodities.find('=') == string::npos)
+  if (commodities.find(',') == string::npos && commodities.find('=') == string::npos &&
+      commodities.find(':') == string::npos)
     return value(moment, commodity_pool_t::current_pool->find_or_create(commodities));
 
-  std::vector<commodity_t *> comms;
-  std::vector<bool>          force;
+  std::vector<commodity_t*> comms;
+  std::vector<commodity_t*> sources;
+  std::vector<bool> force;
 
-  typedef tokenizer<char_separator<char> > tokenizer;
+  typedef tokenizer<char_separator<char>> tokenizer;
   tokenizer tokens(commodities, char_separator<char>(","));
 
-  foreach (const string& name, tokens) {
-    string::size_type name_len = name.length();
+  for (const string& name : tokens) {
+    string target_name = name;
+    string source_name;
 
-    if (commodity_t * commodity = commodity_pool_t::current_pool
-        ->parse_price_expression(name[name_len - 1] == '!' ?
-                                 string(name, 0, name_len - 1) :
-                                 name, add_prices, moment)) {
+    // Handle A:B syntax for selective conversion (convert A to B only)
+    string::size_type colon_pos = name.find(':');
+    if (colon_pos != string::npos) {
+      source_name = string(name, 0, colon_pos);
+      target_name = string(name, colon_pos + 1);
+    }
+
+    string::size_type name_len = target_name.length();
+    bool is_forced = name_len > 0 && target_name[name_len - 1] == '!';
+    string expr_name = is_forced ? string(target_name, 0, name_len - 1) : target_name;
+
+    if (commodity_t* commodity =
+            commodity_pool_t::current_pool->parse_price_expression(expr_name, add_prices, moment)) {
       DEBUG("commodity.exchange", "Pricing for commodity: " << commodity->symbol());
       comms.push_back(&commodity->referent());
-      force.push_back(name[name_len - 1] == '!');
+      force.push_back(is_forced);
+
+      if (!source_name.empty()) {
+        if (commodity_t* src = commodity_pool_t::current_pool->find(source_name))
+          sources.push_back(&src->referent());
+        else
+          sources.push_back(nullptr);
+      } else {
+        sources.push_back(nullptr);
+      }
     }
   }
 
   std::size_t index = 0;
-  foreach (commodity_t * comm, comms) {
+  for (commodity_t* comm : comms) {
     switch (type()) {
     case AMOUNT:
       DEBUG("commodity.exchange", "We have an amount: " << as_amount_lval());
-      if (! force[index] &&
-          std::find(comms.begin(), comms.end(),
-                    &as_amount_lval().commodity().referent()) != comms.end())
+      if (sources[index]) {
+        // A:B syntax: only convert if the amount is commodity A
+        if (&as_amount_lval().commodity().referent() != sources[index])
+          break;
+      } else if (!force[index] &&
+                 std::find(comms.begin(), comms.end(), &as_amount_lval().commodity().referent()) !=
+                     comms.end()) {
         break;
+      }
 
       DEBUG("commodity.exchange", "Referent doesn't match, pricing...");
-      if (optional<amount_t> val = as_amount_lval().value(moment, comm)) {
+      if (auto val = as_amount_lval().value(moment, comm)) {
         DEBUG("commodity.exchange", "Re-priced amount is: " << *val);
         return *val;
       }
@@ -1501,18 +1598,24 @@ value_t value_t::exchange_commodities(const std::string& commodities,
       bool repriced = false;
 
       DEBUG("commodity.exchange", "We have a balance: " << as_balance_lval());
-      foreach (const balance_t::amounts_map::value_type& pair,
-               as_balance_lval().amounts) {
+      for (const balance_t::amounts_map::value_type& pair : as_balance_lval().amounts) {
         DEBUG("commodity.exchange", "We have a balance amount of commodity: "
-              << pair.first->symbol() << " == "
-              << pair.second.commodity().symbol());
-        if (! force[index] &&
-            std::find(comms.begin(), comms.end(),
-                      &pair.first->referent()) != comms.end()) {
+                                        << pair.first->symbol()
+                                        << " == " << pair.second.commodity().symbol());
+        bool should_convert;
+        if (sources[index]) {
+          // A:B syntax: only convert if the amount is commodity A
+          should_convert = (&pair.first->referent() == sources[index]);
+        } else {
+          should_convert = force[index] || std::find(comms.begin(), comms.end(),
+                                                     &pair.first->referent()) == comms.end();
+        }
+
+        if (!should_convert) {
           temp += pair.second;
         } else {
           DEBUG("commodity.exchange", "Referent doesn't match, pricing...");
-          if (optional<amount_t> val = pair.second.value(moment, comm)) {
+          if (auto val = pair.second.value(moment, comm)) {
             DEBUG("commodity.exchange", "Re-priced member amount is: " << *val);
             temp += *val;
             repriced = true;
@@ -1539,8 +1642,7 @@ value_t value_t::exchange_commodities(const std::string& commodities,
   return *this;
 }
 
-void value_t::in_place_reduce()
-{
+void value_t::in_place_reduce() {
   switch (type()) {
   case AMOUNT:
     as_amount_lval().in_place_reduce();
@@ -1549,18 +1651,17 @@ void value_t::in_place_reduce()
     as_balance_lval().in_place_reduce();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_reduce();
     return;
   default:
     return;
   }
 
-  //throw_(value_error, _f("Cannot reduce %1%") % label());
+  // throw_(value_error, _f("Cannot reduce %1%") % label());
 }
 
-void value_t::in_place_unreduce()
-{
+void value_t::in_place_unreduce() {
   switch (type()) {
   case AMOUNT:
     as_amount_lval().in_place_unreduce();
@@ -1569,23 +1670,24 @@ void value_t::in_place_unreduce()
     as_balance_lval().in_place_unreduce();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_unreduce();
     return;
   default:
     return;
   }
 
-  //throw_(value_error, _f("Cannot reduce %1%") % label());
+  // throw_(value_error, _f("Cannot reduce %1%") % label());
 }
 
-value_t value_t::abs() const
-{
+value_t value_t::abs() const {
   switch (type()) {
+  case VOID:
+    return *this;
   case INTEGER: {
     long val = as_long();
     if (val < 0)
-      return - val;
+      return -val;
     return val;
   }
   case AMOUNT:
@@ -1601,8 +1703,7 @@ value_t value_t::abs() const
   return NULL_VALUE;
 }
 
-void value_t::in_place_round()
-{
+void value_t::in_place_round() {
   switch (type()) {
   case INTEGER:
     return;
@@ -1613,7 +1714,7 @@ void value_t::in_place_round()
     as_balance_lval().in_place_round();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_round();
     return;
   default:
@@ -1624,8 +1725,7 @@ void value_t::in_place_round()
   throw_(value_error, _f("Cannot set rounding for %1%") % label());
 }
 
-void value_t::in_place_roundto(int places)
-{
+void value_t::in_place_roundto(int places) {
   DEBUG("amount.roundto", "=====> roundto places " << places);
   switch (type()) {
   case INTEGER:
@@ -1637,7 +1737,7 @@ void value_t::in_place_roundto(int places)
     as_balance_lval().in_place_roundto(places);
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_roundto(places);
     return;
   default:
@@ -1645,8 +1745,7 @@ void value_t::in_place_roundto(int places)
   }
 }
 
-void value_t::in_place_truncate()
-{
+void value_t::in_place_truncate() {
   switch (type()) {
   case INTEGER:
     return;
@@ -1657,7 +1756,7 @@ void value_t::in_place_truncate()
     as_balance_lval().in_place_truncate();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_truncate();
     return;
   default:
@@ -1668,8 +1767,51 @@ void value_t::in_place_truncate()
   throw_(value_error, _f("Cannot truncate %1%") % label());
 }
 
-void value_t::in_place_floor()
-{
+void value_t::in_place_display_round() {
+  switch (type()) {
+  case INTEGER:
+    return;
+  case AMOUNT:
+    as_amount_lval().in_place_roundto(as_amount_lval().display_precision());
+    return;
+  case BALANCE:
+    as_balance_lval().in_place_display_round();
+    return;
+  case SEQUENCE:
+    for (value_t& value : as_sequence_lval())
+      value.in_place_display_round();
+    return;
+  default:
+    break;
+  }
+
+  add_error_context(_f("While display-rounding %1%:") % *this);
+  throw_(value_error, _f("Cannot display-round %1%") % label());
+}
+
+void value_t::in_place_round_to_commodity_precision() {
+  switch (type()) {
+  case INTEGER:
+    return;
+  case AMOUNT:
+    as_amount_lval().in_place_round_to_commodity_precision();
+    return;
+  case BALANCE:
+    as_balance_lval().in_place_round_to_commodity_precision();
+    return;
+  case SEQUENCE:
+    for (value_t& value : as_sequence_lval())
+      value.in_place_round_to_commodity_precision();
+    return;
+  default:
+    break;
+  }
+
+  add_error_context(_f("While rounding %1% to commodity precision:") % *this);
+  throw_(value_error, _f("Cannot round %1% to commodity precision") % label());
+}
+
+void value_t::in_place_floor() {
   switch (type()) {
   case INTEGER:
     return;
@@ -1680,7 +1822,7 @@ void value_t::in_place_floor()
     as_balance_lval().in_place_floor();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_floor();
     return;
   default:
@@ -1691,8 +1833,7 @@ void value_t::in_place_floor()
   throw_(value_error, _f("Cannot floor %1%") % label());
 }
 
-void value_t::in_place_ceiling()
-{
+void value_t::in_place_ceiling() {
   switch (type()) {
   case INTEGER:
     return;
@@ -1703,7 +1844,7 @@ void value_t::in_place_ceiling()
     as_balance_lval().in_place_ceiling();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_ceiling();
     return;
   default:
@@ -1714,8 +1855,7 @@ void value_t::in_place_ceiling()
   throw_(value_error, _f("Cannot ceiling %1%") % label());
 }
 
-void value_t::in_place_unround()
-{
+void value_t::in_place_unround() {
   switch (type()) {
   case INTEGER:
     return;
@@ -1726,7 +1866,7 @@ void value_t::in_place_unround()
     as_balance_lval().in_place_unround();
     return;
   case SEQUENCE:
-    foreach (value_t& value, as_sequence_lval())
+    for (value_t& value : as_sequence_lval())
       value.in_place_unround();
     return;
   default:
@@ -1737,8 +1877,7 @@ void value_t::in_place_unround()
   throw_(value_error, _f("Cannot unround %1%") % label());
 }
 
-void value_t::annotate(const annotation_t& details)
-{
+void value_t::annotate(const annotation_t& details) {
   if (is_amount()) {
     as_amount_lval().annotate(details);
   } else {
@@ -1747,20 +1886,17 @@ void value_t::annotate(const annotation_t& details)
   }
 }
 
-bool value_t::has_annotation() const
-{
+bool value_t::has_annotation() const {
   if (is_amount()) {
     return as_amount().has_annotation();
   } else {
     add_error_context(_f("While checking if %1% has annotations:") % *this);
-    throw_(value_error,
-           _f("Cannot determine whether %1% is annotated") % label());
+    throw_(value_error, _f("Cannot determine whether %1% is annotated") % label());
   }
   return false;
 }
 
-annotation_t& value_t::annotation()
-{
+annotation_t& value_t::annotation() {
   if (is_amount()) {
     return as_amount_lval().annotation();
   } else {
@@ -1770,8 +1906,7 @@ annotation_t& value_t::annotation()
   }
 }
 
-value_t value_t::strip_annotations(const keep_details_t& what_to_keep) const
-{
+value_t value_t::strip_annotations(const keep_details_t& what_to_keep) const {
   if (what_to_keep.keep_all())
     return *this;
 
@@ -1781,6 +1916,7 @@ value_t value_t::strip_annotations(const keep_details_t& what_to_keep) const
   case INTEGER:
   case DATETIME:
   case DATE:
+  case COMMODITY:
   case STRING:
   case MASK:
   case SCOPE:
@@ -1789,7 +1925,7 @@ value_t value_t::strip_annotations(const keep_details_t& what_to_keep) const
 
   case SEQUENCE: {
     sequence_t temp;
-    foreach (const value_t& value, as_sequence())
+    for (const value_t& value : as_sequence())
       temp.push_back(new value_t(value.strip_annotations(what_to_keep)));
     return temp;
   }
@@ -1804,8 +1940,7 @@ value_t value_t::strip_annotations(const keep_details_t& what_to_keep) const
   return NULL_VALUE;
 }
 
-string value_t::label(optional<type_t> the_type) const
-{
+string value_t::label(optional<type_t> the_type) const {
   switch (the_type ? *the_type : type()) {
   case VOID:
     return _("an uninitialized value");
@@ -1821,6 +1956,8 @@ string value_t::label(optional<type_t> the_type) const
     return _("an amount");
   case BALANCE:
     return _("a balance");
+  case COMMODITY:
+    return _("a commodity");
   case STRING:
     return _("a string");
   case MASK:
@@ -1839,16 +1976,11 @@ string value_t::label(optional<type_t> the_type) const
   return _("<invalid>");
 }
 
-void value_t::print(std::ostream&       _out,
-                    const int           first_width,
-                    const int           latter_width,
-                    const uint_least8_t flags) const
-{
+void value_t::print(std::ostream& _out, const int first_width, const int latter_width,
+                    const uint_least8_t flags) const {
   std::ostringstream out;
 
-  if (first_width > 0 &&
-      (! is_amount() || as_amount().is_zero()) &&
-      ! is_balance() && ! is_string()) {
+  if (first_width > 0 && (!is_amount() || as_amount().is_zero()) && !is_balance() && !is_string()) {
     out.width(first_width);
 
     if (flags & AMOUNT_PRINT_RIGHT_JUSTIFY)
@@ -1866,7 +1998,7 @@ void value_t::print(std::ostream&       _out,
     out << (as_boolean() ? "1" : "0");
     break;
 
-  case DATETIME:
+  case DATETIME: // NOLINT(bugprone-branch-clone)
     out << format_datetime(as_datetime(), FMT_WRITTEN);
     break;
 
@@ -1876,8 +2008,7 @@ void value_t::print(std::ostream&       _out,
 
   case INTEGER:
     if (flags & AMOUNT_PRINT_COLORIZE && as_long() < 0)
-      justify(out, to_string(), first_width,
-              flags & AMOUNT_PRINT_RIGHT_JUSTIFY, true);
+      justify(out, to_string(), first_width, flags & AMOUNT_PRINT_RIGHT_JUSTIFY, true);
     else
       out << as_long();
     break;
@@ -1898,6 +2029,9 @@ void value_t::print(std::ostream&       _out,
     as_balance().print(out, first_width, latter_width, flags);
     break;
 
+  case COMMODITY:
+    justify(out, to_string(), first_width, flags & AMOUNT_PRINT_RIGHT_JUSTIFY);
+    break;
   case STRING:
     if (first_width > 0)
       justify(out, as_string(), first_width, flags & AMOUNT_PRINT_RIGHT_JUSTIFY);
@@ -1912,7 +2046,7 @@ void value_t::print(std::ostream&       _out,
   case SEQUENCE: {
     out << '(';
     bool first = true;
-    foreach (const value_t& value, as_sequence()) {
+    for (const value_t& value : as_sequence()) {
       if (first)
         first = false;
       else
@@ -1941,8 +2075,7 @@ void value_t::print(std::ostream&       _out,
   _out << out.str();
 }
 
-void value_t::dump(std::ostream& out, const bool relaxed) const
-{
+void value_t::dump(std::ostream& out, const bool relaxed) const {
   switch (type()) {
   case VOID:
     out << "null";
@@ -1955,7 +2088,7 @@ void value_t::dump(std::ostream& out, const bool relaxed) const
       out << "false";
     break;
 
-  case DATETIME:
+  case DATETIME: // NOLINT(bugprone-branch-clone)
     out << '[' << format_datetime(as_datetime(), FMT_WRITTEN) << ']';
     break;
   case DATE:
@@ -1967,10 +2100,10 @@ void value_t::dump(std::ostream& out, const bool relaxed) const
     break;
 
   case AMOUNT:
-    if (! relaxed)
+    if (!relaxed)
       out << '{';
     out << as_amount();
-    if (! relaxed)
+    if (!relaxed)
       out << '}';
     break;
 
@@ -1978,9 +2111,13 @@ void value_t::dump(std::ostream& out, const bool relaxed) const
     out << as_balance();
     break;
 
+  case COMMODITY:
+    out << as_commodity();
+    break;
+
   case STRING:
     out << '"';
-    foreach (const char& ch, as_string()) {
+    for (const char& ch : as_string()) {
       switch (ch) {
       case '"':
         out << "\\\"";
@@ -2007,13 +2144,13 @@ void value_t::dump(std::ostream& out, const bool relaxed) const
     if (as_any().type() == typeid(expr_t::ptr_op_t))
       as_any<expr_t::ptr_op_t>()->dump(out);
     else
-      out << boost::unsafe_any_cast<const void *>(&as_any());
+      out << as_any().type().name();
     break;
 
   case SEQUENCE: {
     out << '(';
     bool first = true;
-    foreach (const value_t& value, as_sequence()) {
+    for (const value_t& value : as_sequence()) {
       if (first)
         first = false;
       else
@@ -2027,13 +2164,14 @@ void value_t::dump(std::ostream& out, const bool relaxed) const
   }
 }
 
-bool value_t::valid() const
-{
+bool value_t::valid() const {
   switch (type()) {
   case AMOUNT:
     return as_amount().valid();
   case BALANCE:
     return as_balance().valid();
+  case COMMODITY:
+    return as_commodity().valid();
   default:
     break;
   }
@@ -2041,27 +2179,24 @@ bool value_t::valid() const
 }
 
 bool sort_value_is_less_than(const std::list<sort_value_t>& left_values,
-                             const std::list<sort_value_t>& right_values)
-{
-  std::list<sort_value_t>::const_iterator left_iter  = left_values.begin();
+                             const std::list<sort_value_t>& right_values) {
+  std::list<sort_value_t>::const_iterator left_iter = left_values.begin();
   std::list<sort_value_t>::const_iterator right_iter = right_values.begin();
 
   while (left_iter != left_values.end() && right_iter != right_values.end()) {
     // Don't even try to sort balance values
-    if (! (*left_iter).value.is_balance() &&
-        ! (*right_iter).value.is_balance()) {
-      DEBUG("value.sort",
-            " Comparing " << (*left_iter).value << " < " << (*right_iter).value);
+    if (!(*left_iter).value.is_balance() && !(*right_iter).value.is_balance()) {
+      DEBUG("value.sort", " Comparing " << (*left_iter).value << " < " << (*right_iter).value);
       if ((*left_iter).value < (*right_iter).value) {
         DEBUG("value.sort", "  is less");
-        return ! (*left_iter).inverted;
-      }
-      else if ((*left_iter).value > (*right_iter).value) {
+        return !(*left_iter).inverted;
+      } else if ((*left_iter).value > (*right_iter).value) {
         DEBUG("value.sort", "  is greater");
         return (*left_iter).inverted;
       }
     }
-    left_iter++; right_iter++;
+    left_iter++;
+    right_iter++;
   }
 
   assert(left_iter == left_values.end());
@@ -2070,8 +2205,7 @@ bool sort_value_is_less_than(const std::list<sort_value_t>& left_values,
   return false;
 }
 
-void put_value(property_tree::ptree& pt, const value_t& value)
-{
+void put_value(property_tree::ptree& pt, const value_t& value) {
   switch (value.type()) {
   case value_t::VOID:
     pt.add("void", "");
@@ -2088,6 +2222,9 @@ void put_value(property_tree::ptree& pt, const value_t& value)
   case value_t::BALANCE:
     put_balance(pt.add("balance", ""), value.as_balance());
     break;
+  case value_t::COMMODITY:
+    put_commodity(pt.add("commodity", ""), value.as_commodity());
+    break;
   case value_t::DATETIME:
     put_datetime(pt.add("datetime", ""), value.as_datetime());
     break;
@@ -2103,7 +2240,7 @@ void put_value(property_tree::ptree& pt, const value_t& value)
 
   case value_t::SEQUENCE: {
     property_tree::ptree& st(pt.add("sequence", ""));
-    foreach (const value_t& member, value.as_sequence())
+    for (const value_t& member : value.as_sequence())
       put_value(st, member);
     break;
   }

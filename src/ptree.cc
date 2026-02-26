@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -29,7 +29,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <system.hh>
+#include <ledger.hh>
 
 #include "ptree.h"
 #include "xact.h"
@@ -41,67 +41,55 @@
 namespace ledger {
 
 namespace {
-  bool account_visited_p(const account_t& acct) {
-    return ((acct.has_xdata() &&
-            acct.xdata().has_flags(ACCOUNT_EXT_VISITED)) ||
-            acct.children_with_flags(ACCOUNT_EXT_VISITED));
-  }
+bool account_visited_p(const account_t& acct) {
+  return ((acct.has_xdata() && acct.xdata().has_flags(ACCOUNT_EXT_VISITED)) ||
+          acct.children_with_flags(ACCOUNT_EXT_VISITED));
 }
+} // namespace
 
-void format_ptree::flush()
-{
+void format_ptree::flush() {
   std::ostream& out(report.output_stream);
 
   property_tree::ptree pt;
 
   pt.put("ledger.<xmlattr>.version",
-         lexical_cast<string>((Ledger_VERSION_MAJOR << 16) |
-                              (Ledger_VERSION_MINOR << 8) |
+         lexical_cast<string>((Ledger_VERSION_MAJOR << 16) | (Ledger_VERSION_MINOR << 8) |
                               Ledger_VERSION_PATCH));
 
   property_tree::ptree& ct(pt.put("ledger.commodities", ""));
-  foreach (const commodities_pair& pair, commodities)
+  for (const auto& pair : commodities)
     put_commodity(ct.add("commodity", ""), *pair.second, true);
 
   property_tree::ptree& at(pt.put("ledger.accounts", ""));
   put_account(at.add("account", ""), *report.session.journal->master, account_visited_p);
 
   property_tree::ptree& tt(pt.put("ledger.transactions", ""));
-  foreach (const xact_t * xact, transactions) {
+  for (const xact_t* xact : transactions) {
     property_tree::ptree& t(tt.add("transaction", ""));
     put_xact(t, *xact);
 
     property_tree::ptree& post_tree(t.put("postings", ""));
-    foreach (const post_t * post, xact->posts)
-      if (post->has_xdata() &&
-          post->xdata().has_flags(POST_EXT_VISITED))
+    for (const post_t* post : xact->posts)
+      if (post->has_xdata() && post->xdata().has_flags(POST_EXT_VISITED))
         put_post(post_tree.add("posting", ""), *post);
   }
 
   switch (format) {
   case FORMAT_XML:
-#if BOOST_VERSION >= 105600
-    auto indented = property_tree::xml_writer_make_settings<std::string> (' ', 2);
-#else
-    property_tree::xml_writer_settings<char> indented(' ', 2);
-#endif
-
+    auto indented = property_tree::xml_writer_make_settings<std::string>(' ', 2);
     property_tree::write_xml(out, pt, indented);
-    out << std::endl;
+    out << '\n';
     break;
   }
 }
 
-void format_ptree::operator()(post_t& post)
-{
+void format_ptree::operator()(post_t& post) {
   assert(post.xdata().has_flags(POST_EXT_VISITED));
 
-  commodities.insert(commodities_pair(post.amount.commodity().symbol(),
-                                      &post.amount.commodity()));
+  commodities.insert(commodities_pair(post.amount.commodity().symbol(), &post.amount.commodity()));
 
-  std::pair<std::set<xact_t *>::iterator, bool> result =
-    transactions_set.insert(post.xact);
-  if (result.second)            // we haven't seen this transaction before
+  auto [iter, inserted] = transactions_set.insert(post.xact);
+  if (inserted) // we haven't seen this transaction before
     transactions.push_back(post.xact);
 }
 

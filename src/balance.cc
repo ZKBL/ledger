@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -35,50 +35,40 @@
 #include "commodity.h"
 #include "annotate.h"
 #include "pool.h"
-#include "unistring.h"          // for justify()
+#include "unistring.h" // for justify()
 
 namespace ledger {
 
-balance_t::balance_t(const double val)
-{
-  amounts.insert
-    (amounts_map::value_type(commodity_pool_t::current_pool->null_commodity, val));
+balance_t::balance_t(const double val) {
+  amounts.insert(amounts_map::value_type(commodity_pool_t::current_pool->null_commodity, val));
   TRACE_CTOR(balance_t, "const double");
 }
 
-balance_t::balance_t(const unsigned long val)
-{
-  amounts.insert
-    (amounts_map::value_type(commodity_pool_t::current_pool->null_commodity, val));
+balance_t::balance_t(const unsigned long val) {
+  amounts.insert(amounts_map::value_type(commodity_pool_t::current_pool->null_commodity, val));
   TRACE_CTOR(balance_t, "const unsigned long");
 }
 
-balance_t::balance_t(const long val)
-{
-  amounts.insert
-    (amounts_map::value_type(commodity_pool_t::current_pool->null_commodity, val));
+balance_t::balance_t(const long val) {
+  amounts.insert(amounts_map::value_type(commodity_pool_t::current_pool->null_commodity, val));
   TRACE_CTOR(balance_t, "const long");
 }
 
-balance_t& balance_t::operator+=(const balance_t& bal)
-{
-  foreach (const amounts_map::value_type& pair, bal.amounts)
+balance_t& balance_t::operator+=(const balance_t& bal) {
+  for (const amounts_map::value_type& pair : bal.amounts)
     *this += pair.second;
   return *this;
 }
 
-balance_t& balance_t::operator+=(const amount_t& amt)
-{
+balance_t& balance_t::operator+=(const amount_t& amt) {
   if (amt.is_null())
-    throw_(balance_error,
-           _("Cannot add an uninitialized amount to a balance"));
+    throw_(balance_error, _("Cannot add an uninitialized amount to a balance"));
 
   if (amt.is_realzero())
     return *this;
 
-  amounts_map::iterator i =
-    amt.commodity().has_annotation() ?
-    find_by_name(amt.commodity()) : amounts.find(&amt.commodity());
+  amounts_map::iterator i = amt.commodity().has_annotation() ? find_by_name(amt.commodity())
+                                                             : amounts.find(&amt.commodity());
   if (i != amounts.end())
     i->second += amt;
   else
@@ -87,25 +77,21 @@ balance_t& balance_t::operator+=(const amount_t& amt)
   return *this;
 }
 
-balance_t& balance_t::operator-=(const balance_t& bal)
-{
-  foreach (const amounts_map::value_type& pair, bal.amounts)
+balance_t& balance_t::operator-=(const balance_t& bal) {
+  for (const amounts_map::value_type& pair : bal.amounts)
     *this -= pair.second;
   return *this;
 }
 
-balance_t& balance_t::operator-=(const amount_t& amt)
-{
+balance_t& balance_t::operator-=(const amount_t& amt) {
   if (amt.is_null())
-    throw_(balance_error,
-           _("Cannot subtract an uninitialized amount from a balance"));
+    throw_(balance_error, _("Cannot subtract an uninitialized amount from a balance"));
 
   if (amt.is_realzero())
     return *this;
 
-  amounts_map::iterator i =
-    amt.commodity().has_annotation() ?
-    find_by_name(amt.commodity()) : amounts.find(&amt.commodity());
+  amounts_map::iterator i = amt.commodity().has_annotation() ? find_by_name(amt.commodity())
+                                                             : amounts.find(&amt.commodity());
   if (i != amounts.end()) {
     i->second -= amt;
     if (i->second.is_realzero())
@@ -116,25 +102,20 @@ balance_t& balance_t::operator-=(const amount_t& amt)
   return *this;
 }
 
-balance_t& balance_t::operator*=(const amount_t& amt)
-{
+balance_t& balance_t::operator*=(const amount_t& amt) {
   if (amt.is_null())
-    throw_(balance_error,
-           _("Cannot multiply a balance by an uninitialized amount"));
+    throw_(balance_error, _("Cannot multiply a balance by an uninitialized amount"));
 
   if (is_realzero()) {
     ;
-  }
-  else if (amt.is_realzero()) {
+  } else if (amt.is_realzero()) {
     *this = amt;
-  }
-  else if (! amt.commodity()) {
+  } else if (!amt.commodity()) {
     // Multiplying by an amount with no commodity causes all the
     // component amounts to be increased by the same factor.
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second *= amt;
-  }
-  else if (amounts.size() == 1) {
+  } else if (amounts.size() == 1) {
     // Multiplying by a commoditized amount is only valid if the sole
     // commodity in the balance is of the same kind as the amount's
     // commodity.
@@ -143,34 +124,28 @@ balance_t& balance_t::operator*=(const amount_t& amt)
     else
       throw_(balance_error,
              _("Cannot multiply a balance with annotated commodities by a commoditized amount"));
-  }
-  else {
+  } else {
     assert(amounts.size() > 1);
-    throw_(balance_error,
-           _("Cannot multiply a multi-commodity balance by a commoditized amount"));
+    throw_(balance_error, _("Cannot multiply a multi-commodity balance by a commoditized amount"));
   }
   return *this;
 }
 
-balance_t& balance_t::operator/=(const amount_t& amt)
-{
+balance_t& balance_t::operator/=(const amount_t& amt) {
   if (amt.is_null())
-    throw_(balance_error,
-           _("Cannot divide a balance by an uninitialized amount"));
+    throw_(balance_error, _("Cannot divide a balance by an uninitialized amount"));
 
+  // NOLINTBEGIN(bugprone-branch-clone)
   if (is_realzero()) {
     ;
-  }
-  else if (amt.is_realzero()) {
+  } else if (amt.is_realzero()) {
     throw_(balance_error, _("Divide by zero"));
-  }
-  else if (! amt.commodity()) {
+  } else if (!amt.commodity()) {
     // Dividing by an amount with no commodity causes all the
     // component amounts to be divided by the same factor.
-    foreach (amounts_map::value_type& pair, amounts)
+    for (amounts_map::value_type& pair : amounts)
       pair.second /= amt;
-  }
-  else if (amounts.size() == 1) {
+  } else if (amounts.size() == 1) {
     // Dividing by a commoditized amount is only valid if the sole
     // commodity in the balance is of the same kind as the amount's
     // commodity.
@@ -179,24 +154,21 @@ balance_t& balance_t::operator/=(const amount_t& amt)
     else
       throw_(balance_error,
              _("Cannot divide a balance with annotated commodities by a commoditized amount"));
-  }
-  else {
+  } else {
     assert(amounts.size() > 1);
-    throw_(balance_error,
-           _("Cannot divide a multi-commodity balance by a commoditized amount"));
+    throw_(balance_error, _("Cannot divide a multi-commodity balance by a commoditized amount"));
   }
+  // NOLINTEND(bugprone-branch-clone)
   return *this;
 }
 
-optional<balance_t>
-balance_t::value(const datetime_t&   moment,
-                 const commodity_t * in_terms_of) const
-{
+optional<balance_t> balance_t::value(const datetime_t& moment,
+                                     const commodity_t* in_terms_of) const {
   balance_t temp;
-  bool      resolved = false;
+  bool resolved = false;
 
-  foreach (const amounts_map::value_type& pair, amounts) {
-    if (optional<amount_t> val = pair.second.value(moment, in_terms_of)) {
+  for (const amounts_map::value_type& pair : amounts) {
+    if (auto val = pair.second.value(moment, in_terms_of)) {
       temp += *val;
       resolved = true;
     } else {
@@ -206,24 +178,16 @@ balance_t::value(const datetime_t&   moment,
   return resolved ? temp : optional<balance_t>();
 }
 
-balance_t::amounts_map::iterator
-balance_t::find_by_name(const commodity_t& comm)
-{
-  for (amounts_map::iterator i = amounts.begin();
-       i != amounts.end();
-       i++) {
+balance_t::amounts_map::iterator balance_t::find_by_name(const commodity_t& comm) {
+  for (amounts_map::iterator i = amounts.begin(); i != amounts.end(); i++) {
     if (*(*i).first == comm)
       return i;
   }
   return amounts.end();
 }
 
-balance_t::amounts_map::const_iterator
-balance_t::find_by_name(const commodity_t& comm) const
-{
-  for (amounts_map::const_iterator i = amounts.begin();
-       i != amounts.end();
-       i++) {
+balance_t::amounts_map::const_iterator balance_t::find_by_name(const commodity_t& comm) const {
+  for (amounts_map::const_iterator i = amounts.begin(); i != amounts.end(); i++) {
     if (*(*i).first == comm)
       return i;
   }
@@ -231,171 +195,191 @@ balance_t::find_by_name(const commodity_t& comm) const
 }
 
 optional<amount_t>
-balance_t::commodity_amount(const optional<const commodity_t&>& commodity) const
-{
-  if (! commodity) {
+balance_t::commodity_amount(const optional<const commodity_t&>& commodity) const {
+  if (!commodity) {
     if (amounts.size() == 1) {
       return amounts.begin()->second;
-    }
-    else if (amounts.size() > 1) {
+    } else if (amounts.size() > 1) {
       // Try stripping annotations before giving an error.
       balance_t temp(strip_annotations(keep_details_t()));
       if (temp.amounts.size() == 1)
         return temp.commodity_amount(commodity);
 
       throw_(amount_error,
-             _f("Requested amount of a balance with multiple commodities: %1%")
-             % temp);
+             _f("Requested amount of a balance with multiple commodities: %1%") % temp);
     }
-  }
-  else if (amounts.size() > 0) {
-    amounts_map::const_iterator i =
-      commodity->has_annotation() ?
-      find_by_name(*commodity) :
-      amounts.find(const_cast<commodity_t *>(&*commodity));
+  } else if (amounts.size() > 0) {
+    amounts_map::const_iterator i = commodity->has_annotation()
+                                        ? find_by_name(*commodity)
+                                        : amounts.find(const_cast<commodity_t*>(&*commodity));
     if (i != amounts.end())
       return i->second;
   }
   return none;
 }
 
-balance_t
-balance_t::strip_annotations(const keep_details_t& what_to_keep) const
-{
-  balance_t temp;
+balance_t balance_t::strip_annotations(const keep_details_t& what_to_keep) const {
+  // Fast path: if no amounts have annotations that need stripping,
+  // return *this directly to avoid the expensive GMP arithmetic of
+  // rebuilding the balance via operator+=.
+  for (const amounts_map::value_type& pair : amounts) {
+    if (!what_to_keep.keep_all(pair.second.commodity())) {
+      // At least one amount needs stripping; fall through to rebuild.
+      // Preserve sort_order so FIFO/LIFO display preference is maintained.
+      balance_t temp;
+      temp.sort_order = sort_order;
+      for (const amounts_map::value_type& pair2 : amounts)
+        temp += pair2.second.strip_annotations(what_to_keep);
+      return temp;
+    }
+  }
 
-  foreach (const amounts_map::value_type& pair, amounts)
-    temp += pair.second.strip_annotations(what_to_keep);
-
-  return temp;
+  return *this;
 }
 
-void balance_t::sorted_amounts(amounts_array& sorted) const
-{
-  foreach (const amounts_map::value_type& pair, amounts)
-    if (pair.second)
+void balance_t::sorted_amounts(amounts_array& sorted) const {
+  for (const amounts_map::value_type& pair : amounts)
+    if (!pair.second.is_null())
       sorted.push_back(&pair.second);
-  std::stable_sort(
-    sorted.begin(), sorted.end(),
-    [](const amount_t * left, const amount_t * right) {
+
+  if (sort_order == lot_sort_order::fifo || sort_order == lot_sort_order::lifo) {
+    const bool ascending = (sort_order == lot_sort_order::fifo);
+    std::stable_sort(
+        sorted.begin(), sorted.end(), [ascending](const amount_t* left, const amount_t* right) {
+          commodity_t& lc = left->commodity();
+          commodity_t& rc = right->commodity();
+
+          // Primary sort: base symbol (same as compare_by_commodity)
+          int cmp = lc.base_symbol().compare(rc.base_symbol());
+          if (cmp != 0)
+            return cmp < 0;
+
+          // Unannotated lots sort before annotated ones
+          if (!lc.has_annotation() && rc.has_annotation())
+            return true;
+          if (lc.has_annotation() && !rc.has_annotation())
+            return false;
+          if (!lc.has_annotation() && !rc.has_annotation())
+            return false;
+
+          // Both annotated: compare by date first (FIFO=ascending, LIFO=descending)
+          const annotated_commodity_t& alc = static_cast<const annotated_commodity_t&>(lc);
+          const annotated_commodity_t& arc = static_cast<const annotated_commodity_t&>(rc);
+
+          if (!alc.details.date && arc.details.date)
+            return ascending; // no date sorts first for FIFO, last for LIFO
+          if (alc.details.date && !arc.details.date)
+            return !ascending;
+          if (alc.details.date && arc.details.date && *alc.details.date != *arc.details.date)
+            return ascending ? *alc.details.date < *arc.details.date
+                             : *alc.details.date > *arc.details.date;
+
+          // Dates equal (or both absent): fall back to standard commodity ordering
+          return commodity_t::compare_by_commodity()(left, right) < 0;
+        });
+  } else {
+    std::stable_sort(sorted.begin(), sorted.end(), [](const amount_t* left, const amount_t* right) {
       return commodity_t::compare_by_commodity()(left, right) < 0;
     });
+  }
 }
 
-void balance_t::map_sorted_amounts(function<void(const amount_t&)> fn) const
-{
-  if (! amounts.empty()) {
+void balance_t::map_sorted_amounts(const function<void(const amount_t&)>& fn) const {
+  if (!amounts.empty()) {
     if (amounts.size() == 1) {
       const amount_t& amount((*amounts.begin()).second);
-      if (amount)
+      if (!amount.is_null())
         fn(amount);
-    }
-    else {
+    } else {
       amounts_array sorted;
       sorted_amounts(sorted);
-      foreach (const amount_t * amount, sorted)
+      for (const amount_t* amount : sorted)
         fn(*amount);
     }
   }
 }
 
 namespace {
-  struct print_amount_from_balance
-  {
-    std::ostream& out;
-    bool&         first;
-    int           fwidth;
-    int           lwidth;
-    uint_least8_t flags;
+struct print_amount_from_balance {
+  std::ostream& out;
+  bool& first;
+  int fwidth;
+  int lwidth;
+  uint_least8_t flags;
 
-    explicit print_amount_from_balance(std::ostream& _out,
-                                       bool& _first,
-                                       int _fwidth, int _lwidth,
-                                       uint_least8_t _flags)
-      : out(_out), first(_first), fwidth(_fwidth), lwidth(_lwidth),
-        flags(_flags) {
-      TRACE_CTOR(print_amount_from_balance,
-                 "ostream&, int, int, uint_least8_t");
-    }
-    print_amount_from_balance(const print_amount_from_balance& other)
-      : out(other.out), first(other.first), fwidth(other.fwidth),
-        lwidth(other.lwidth), flags(other.flags) {
-      TRACE_CTOR(print_amount_from_balance, "copy");
-    }
-    ~print_amount_from_balance() throw() {
-      TRACE_DTOR(print_amount_from_balance);
-    }
+  explicit print_amount_from_balance(std::ostream& _out, bool& _first, int _fwidth, int _lwidth,
+                                     uint_least8_t _flags)
+      : out(_out), first(_first), fwidth(_fwidth), lwidth(_lwidth), flags(_flags) {
+    TRACE_CTOR(print_amount_from_balance, "ostream&, int, int, uint_least8_t");
+  }
+  print_amount_from_balance(const print_amount_from_balance& other)
+      : out(other.out), first(other.first), fwidth(other.fwidth), lwidth(other.lwidth),
+        flags(other.flags) {
+    TRACE_CTOR(print_amount_from_balance, "copy");
+  }
+  ~print_amount_from_balance() noexcept { TRACE_DTOR(print_amount_from_balance); }
 
-    void operator()(const amount_t& amount) {
-      int width;
-      if (! first) {
-        out << std::endl;
-        width = lwidth;
-      } else {
-        first = false;
-        width = fwidth;
-      }
+  void operator()(const amount_t& amount) {
+    if (amount.is_zero())
+      return;
 
-      std::ostringstream buf;
-      amount.print(buf, flags);
-
-      justify(out, buf.str(), width,
-              flags & AMOUNT_PRINT_RIGHT_JUSTIFY,
-              flags & AMOUNT_PRINT_COLORIZE && amount.sign() < 0);
+    int width;
+    if (!first) {
+      out << '\n';
+      width = lwidth;
+    } else {
+      first = false;
+      width = fwidth;
     }
 
-    void close() {
-      out.width(fwidth);
-      if (flags & AMOUNT_PRINT_RIGHT_JUSTIFY)
-        out << std::right;
-      else
-        out << std::left;
-      out << 0;
-    }
-  };
-}
+    std::ostringstream buf;
+    amount.print(buf, flags);
 
-void balance_t::print(std::ostream&       out,
-                      const int           first_width,
-                      const int           latter_width,
-                      const uint_least8_t flags) const
-{
+    justify(out, buf.str(), width, flags & AMOUNT_PRINT_RIGHT_JUSTIFY,
+            flags & AMOUNT_PRINT_COLORIZE && amount.sign() < 0);
+  }
+
+  void close() {
+    out.width(fwidth);
+    if (flags & AMOUNT_PRINT_RIGHT_JUSTIFY)
+      out << std::right;
+    else
+      out << std::left;
+    out << 0;
+  }
+};
+} // namespace
+
+void balance_t::print(std::ostream& out, const int first_width, const int latter_width,
+                      const uint_least8_t flags) const {
   bool first = true;
-  print_amount_from_balance
-    amount_printer(out, first, first_width,
-                   latter_width == 1 ? first_width : latter_width, flags);
+  print_amount_from_balance amount_printer(out, first, first_width,
+                                           latter_width == 1 ? first_width : latter_width, flags);
   map_sorted_amounts(amount_printer);
 
   if (first)
     amount_printer.close();
 }
 
-void put_balance(property_tree::ptree& st, const balance_t& bal)
-{
-  foreach (const balance_t::amounts_map::value_type& pair, bal.amounts)
+void put_balance(property_tree::ptree& st, const balance_t& bal) {
+  for (const balance_t::amounts_map::value_type& pair : bal.amounts)
     put_amount(st.add("amount", ""), pair.second);
 }
 
-balance_t average_lot_prices(const balance_t& bal)
-{
+balance_t average_lot_prices(const balance_t& bal) {
   // First, we split the balance into multiple balances by underlying
   // commodity.
-  typedef std::map<optional<std::string>,
-                   std::pair<amount_t, annotation_t> > balance_map;
+  typedef std::map<optional<std::string>, std::pair<amount_t, annotation_t>> balance_map;
   balance_map bycomm;
 
-  foreach (const balance_t::amounts_map::value_type& pair, bal.amounts) {
+  for (const balance_t::amounts_map::value_type& pair : bal.amounts) {
     optional<std::string> sym(pair.first->symbol());
     amount_t quant(pair.second.strip_annotations(keep_details_t()));
 
-    balance_map::iterator i = bycomm.find(sym);
-    if (i == bycomm.end()) {
-      bycomm.insert(
-        balance_map::value_type(sym, std::make_pair(quant, annotation_t())));
-      i = bycomm.find(sym);    // must succeed now
-    } else {
-      (*i).second.first += quant;
-    }
+    auto [i, inserted] =
+        bycomm.insert(balance_map::value_type(sym, std::make_pair(quant, annotation_t())));
+    if (!inserted)
+      i->second.first += quant;
 
     if (pair.first->has_annotation()) {
       annotated_commodity_t& acomm(static_cast<annotated_commodity_t&>(*pair.first));
@@ -409,7 +393,7 @@ balance_t average_lot_prices(const balance_t& bal)
       }
 
       if (acomm.details.date) {
-        if (! ann.date || *acomm.details.date < *ann.date)
+        if (!ann.date || *acomm.details.date < *ann.date)
           ann.date = *acomm.details.date;
       }
     }
@@ -417,21 +401,32 @@ balance_t average_lot_prices(const balance_t& bal)
 
   balance_t result;
 
-  foreach (balance_map::value_type& pair, bycomm) {
+  for (balance_map::value_type& pair : bycomm) {
     amount_t amt(pair.second.first);
-    if (! amt.is_realzero()) {
+    if (!amt.is_realzero()) {
       if (pair.second.second.price)
         pair.second.second.price = *pair.second.second.price / amt;
 
-      commodity_t * acomm =
-        commodity_pool_t::current_pool->find_or_create(
-          amt.commodity(), pair.second.second);
+      commodity_t* acomm =
+          commodity_pool_t::current_pool->find_or_create(amt.commodity(), pair.second.second);
       amt.set_commodity(*acomm);
 
       result += amt;
     }
   }
 
+  return result;
+}
+
+balance_t fifo_lot_prices(const balance_t& bal) {
+  balance_t result(bal);
+  result.sort_order = balance_t::lot_sort_order::fifo;
+  return result;
+}
+
+balance_t lifo_lot_prices(const balance_t& bal) {
+  balance_t result(bal);
+  result.sort_order = balance_t::lot_sort_order::lifo;
   return result;
 }
 

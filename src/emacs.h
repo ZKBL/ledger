@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2018, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2025, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,8 +39,7 @@
  *
  * @ingroup report
  */
-#ifndef INCLUDED_EMACS_H
-#define INCLUDED_EMACS_H
+#pragma once
 
 #include "chain.h"
 
@@ -48,33 +47,31 @@ namespace ledger {
 
 class xact_t;
 
-class format_emacs_posts : public item_handler<post_t>
-{
+class report_t;
+
+class format_emacs_posts : public item_handler<post_t> {
   format_emacs_posts();
 
 protected:
+  report_t& report;
   std::ostream& out;
-  xact_t *     last_xact;
+  xact_t* last_xact;
 
 public:
-  format_emacs_posts(std::ostream& _out)
-    : out(_out), last_xact(NULL) {
-    TRACE_CTOR(format_emacs_posts, "std::ostream&");
+  format_emacs_posts(report_t& _report, std::ostream& _out)
+      : report(_report), out(_out), last_xact(nullptr) {
+    TRACE_CTOR(format_emacs_posts, "report_t&, std::ostream&");
   }
-  ~format_emacs_posts() {
-    TRACE_DTOR(format_emacs_posts);
-  }
+  ~format_emacs_posts() override { TRACE_DTOR(format_emacs_posts); }
 
   virtual void write_xact(xact_t& xact);
-  virtual void flush() {
+  void flush() override {
     if (last_xact)
       out << "))\n";
     out.flush();
   }
-  virtual void operator()(post_t& post);
+  void operator()(post_t& post) override;
   virtual string escape_string(string raw);
 };
 
 } // namespace ledger
-
-#endif // INCLUDED_EMACS_H

@@ -1,0 +1,5 @@
+# UndefinedBehaviorSanitizer (UBSan) suppression file for known pre-existing issues.
+# Used by CI sanitizer builds via UBSAN_OPTIONS=suppressions=...
+#
+# Format: <check_name>:<pattern>
+# See https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
